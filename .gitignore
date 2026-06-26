@@ -1,0 +1,9 @@
+# Local Claude Code session state (machine/user-specific, not for the repo)
+.claude/settings.local.json
+
+# Per-project publisher routing config (team-specific; created at onboarding)
+.spec-kit/
+
+# OS / editor cruft
+.DS_Store
+*.swp

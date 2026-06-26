@@ -1,0 +1,150 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonschema>=4.20", "pyyaml>=6"]
+# ///
+"""Validate a technical-spec constraint envelope.
+
+Checks the JSON Schema (constraints.schema.json) plus the constraints the schema
+cannot express: key uniqueness, every soft constraint has an escape hatch (also
+schema-enforced, re-checked here with a clear message), every hard constraint has
+none, and every tracesTo entry references a PR-* that exists in the product spec.
+
+A product spec is REQUIRED: constraints are bounded by the product they serve, so
+they are never validated in a vacuum. Provide it with --product-spec, or place a
+PRODUCT_SPEC.md beside the constraints file. If neither is found, this is a usage
+error (exit 2), not a silent downgrade.
+
+Usage:
+    validate-constraints CONSTRAINTS.yaml [--schema PATH] [--product-spec PATH]
+
+Exit codes: 0 = valid, 1 = invalid, 2 = usage/IO error (incl. no product spec found).
+The schema defaults to ../reference/constraints.schema.json relative to this script.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+import yaml
+from jsonschema import Draft202012Validator
+
+HERE = Path(__file__).resolve().parent
+DEFAULT_SCHEMA = HERE.parent / "reference" / "constraints.schema.json"
+
+PR_ID = re.compile(r"\bPR-[a-z0-9]+(?:-[a-z0-9]+)*\b")
+
+
+def fail(errors: list[str]) -> None:
+    print("invalid:", file=sys.stderr)
+    for e in errors:
+        print(f"  - {e}", file=sys.stderr)
+    sys.exit(1)
+
+
+def check_constraints(doc: dict, product_spec_ids: set[str]) -> list[str]:
+    """The checks JSON Schema can't (cleanly) express."""
+    errors: list[str] = []
+    constraints = doc.get("constraints", []) or []
+
+    # Key uniqueness.
+    keys = [c.get("key") for c in constraints if isinstance(c, dict)]
+    seen, dupes = set(), set()
+    for k in keys:
+        (dupes.add(k) if k in seen else seen.add(k))
+    for k in sorted(dupes):
+        errors.append(f"duplicate constraint key: {k!r}")
+
+    for c in constraints:
+        if not isinstance(c, dict):
+            continue
+        k = c.get("key")
+        kind = c.get("kind")
+        # Re-check the hard/soft escape-hatch rules with friendly messages.
+        if kind == "soft" and not c.get("escapeHatch"):
+            errors.append(f"{k!r}: soft constraint must have an escapeHatch")
+        if kind == "hard" and c.get("escapeHatch"):
+            errors.append(f"{k!r}: hard constraint must not have an escapeHatch")
+        # Traceability: shape is schema-checked; existence is checked against the product spec.
+        for ref in c.get("tracesTo", []) or []:
+            if ref not in product_spec_ids:
+                errors.append(f"{k!r}: tracesTo {ref!r} not found in the product spec")
+
+    return errors
+
+
+def load_product_spec_ids(path: Path | None, constraints_path: Path) -> set[str]:
+    """Collect PR-* ids from the product spec. A spec is required; missing one is a usage error."""
+    spec_path = path
+    if spec_path is None:
+        candidate = constraints_path.parent / "PRODUCT_SPEC.md"
+        if candidate.exists():
+            spec_path = candidate
+    if spec_path is None:
+        print(
+            "error: no product spec found. Pass --product-spec PATH, or place a "
+            "PRODUCT_SPEC.md beside the constraints file. Constraints are validated "
+            "against the product they serve, never in a vacuum.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    try:
+        text = spec_path.read_text()
+    except OSError as e:
+        print(f"error reading product spec: {e}", file=sys.stderr)
+        sys.exit(2)
+    return set(PR_ID.findall(text))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Validate a technical-spec constraint envelope.")
+    ap.add_argument("constraints", help="path to constraints.yaml (or .json)")
+    ap.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="path to the JSON Schema")
+    ap.add_argument(
+        "--product-spec",
+        default=None,
+        help="path to PRODUCT_SPEC.md; if omitted, a sibling PRODUCT_SPEC.md is used. Required.",
+    )
+    args = ap.parse_args()
+
+    constraints_path = Path(args.constraints)
+    try:
+        schema = json.loads(Path(args.schema).read_text())
+        doc = yaml.safe_load(constraints_path.read_text())
+    except (OSError, json.JSONDecodeError, yaml.YAMLError) as e:
+        print(f"error reading inputs: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    # A product spec is required (usage precondition) — resolve it before anything else,
+    # so a missing spec fails fast regardless of the constraints file's shape.
+    product_spec_ids = load_product_spec_ids(
+        Path(args.product_spec) if args.product_spec else None,
+        constraints_path,
+    )
+
+    if not isinstance(doc, dict):
+        fail(["constraints file is not a mapping/object"])
+
+    schema_errors = sorted(
+        Draft202012Validator(schema).iter_errors(doc),
+        key=lambda e: list(e.path),
+    )
+    errors = [f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in schema_errors]
+
+    # Structural constraints only make sense once the shape is roughly right.
+    if not errors:
+        errors += check_constraints(doc, product_spec_ids)
+
+    if errors:
+        fail(errors)
+    print(
+        f"ok -- {args.constraints} is a valid constraint envelope "
+        f"({len(doc.get('constraints', []))} constraints)"
+    )
+
+
+if __name__ == "__main__":
+    main()

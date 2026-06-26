@@ -1,0 +1,16 @@
+{
+  "name": "agent-specs",
+  "owner": {
+    "name": "Matthew Krueger",
+    "email": "matthew.l.krueger@gmail.com"
+  },
+  "description": "Shareable Claude Code plugins for spec-driven engineering workflows.",
+  "plugins": [
+    {
+      "name": "spec-kit",
+      "source": "./spec-kit",
+      "description": "The spec phase of an AI SDLC as one plugin: product spec -> technical spec + hard/soft constraints -> up-front acceptance plan + test-first build plan, linked by a PR-* traceability spine. Works greenfield or feature-addition. Invoke any architect agent, do a full run, or publish the plans to Linear/Jira.",
+      "version": "0.1.0"
+    }
+  ]
+}

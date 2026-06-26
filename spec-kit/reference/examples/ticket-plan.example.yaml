@@ -1,0 +1,145 @@
+# Example tracker-neutral ticket plan.
+# Validates against ../ticket-plan.schema.json (draft 2020-12).
+# Illustrates: a refactor blocker, tickets that depend on it, a parent/child
+# relationship, a CI ticket without cases, and a polyglot `stack` key.
+version: 1
+spec: TEST_SPEC.md
+title: "Test suite for feedback scheduling"
+
+milestone:
+  key: testing
+  name: "Testing: feedback scheduling"
+  description: >
+    Establish unit, integration, component, and e2e coverage for the feedback
+    delivery scheduling feature, plus the prerequisite refactor and CI gates.
+
+tickets:
+  # --- Prerequisite refactor: a blocker for the date-math unit tests ---
+  - key: refactor-extract-clock
+    title: "Refactor: inject a clock into the scheduling engine"
+    layer: refactor
+    stack: python
+    priority: high
+    estimate: 2
+    labels: [refactor, scheduling]
+    description: |
+      The scheduling engine calls the real system clock internally, which makes
+      recurrence/DST behavior untestable deterministically. Extract a `Clock`
+      seam and inject `now` so date math can be unit-tested against fixed times.
+    modulesInScope:
+      - src/scheduling/engine.py
+      - src/scheduling/clock.py        # new seam to create
+    acceptanceCriteria:
+      - "Engine takes an injected clock; no direct system-clock calls remain"
+      - "Existing callers updated to pass a real clock"
+      - "Green under `pytest tests/unit/scheduling` and type-check passes"
+
+  # --- Unit tests, blocked by the refactor above ---
+  - key: unit-recurrence
+    title: "Unit: recurrence/date math"
+    layer: unit
+    stack: python
+    priority: high
+    estimate: 3
+    labels: [unit, scheduling, recurrence]
+    description: |
+      Exhaustively cover the recurrence engine's date math against a fixed,
+      injected clock and a locked timezone.
+    cases:
+      - "weekly recurrence advances 7 days across a month boundary -> correct next date"
+      - "leap-year Feb 29 recurrence -> rolls to Feb 28 in non-leap years"
+      - "DST spring-forward: 2:30am local recurrence -> maps correctly to UTC"
+      - "DST fall-back: ambiguous 1:30am local -> resolves to the documented offset"
+      - "empty/None schedule input -> raises a validation error, not a crash"
+    modulesInScope:
+      - src/scheduling/engine.py
+      - tests/unit/scheduling/test_recurrence.py   # to create
+      - tests/conftest.py                          # fixed clock + tz fixtures
+    acceptanceCriteria:
+      - "Every enumerated case implemented and passing"
+      - "Runs green under `pytest tests/unit/scheduling`; no skipped/focused tests"
+      - "Coverage floor (>=80% branches) met on src/scheduling"
+    blockedBy: [refactor-extract-clock]
+
+  # --- Integration test ---
+  - key: integration-schedule-endpoint
+    title: "Integration: POST /api/feedback/schedule"
+    layer: integration
+    stack: python
+    priority: medium
+    estimate: 3
+    labels: [integration, api]
+    description: |
+      Exercise the schedule endpoint with the datastore and notification
+      provider mocked at a single seam, asserting the persisted payload and the
+      provider call arguments — not just the HTTP status.
+    cases:
+      - "valid request -> 201, row persisted with normalized UTC time"
+      - "unauthorized caller -> 403, nothing persisted"
+      - "datastore errors -> 5xx and the error path is handled (fail-closed)"
+      - "duplicate idempotency key -> single row, second call is a no-op"
+    modulesInScope:
+      - src/api/routes/feedback.py
+      - tests/integration/test_schedule_endpoint.py   # to create
+      - tests/integration/harness.py                  # makeContext() fake-deps factory
+    acceptanceCriteria:
+      - "Every enumerated case implemented and passing"
+      - "External deps mocked at one seam; provider call args asserted"
+      - "Green under `pytest tests/integration`"
+
+  # --- E2E parent journey with a child sub-ticket ---
+  - key: e2e-schedule-journey
+    title: "E2E: user schedules feedback delivery"
+    layer: e2e
+    stack: web
+    priority: medium
+    estimate: 5
+    labels: [e2e, playwright]
+    description: |
+      Critical user journey through the scheduling UI against a built app with a
+      mocked backend (seeded session, intercepted HTTP).
+    cases:
+      - "user picks a date/time, submits -> sees confirmation and the scheduled item"
+      - "validation error from backend -> inline error shown, no navigation"
+    modulesInScope:
+      - e2e/schedule.spec.ts                # to create
+      - e2e/fixtures/auth.ts                # seeded-session bypass
+    acceptanceCriteria:
+      - "Both flows pass against a built app + mocked backend"
+      - "Trace/video uploaded as artifacts on failure"
+
+  - key: e2e-schedule-fixtures
+    title: "E2E fixtures: seeded session + HTTP interception for scheduling"
+    layer: harness
+    stack: web
+    priority: medium
+    estimate: 2
+    labels: [e2e, harness]
+    description: |
+      Shared Playwright fixtures the scheduling journey depends on: auth bypass
+      via seeded session and request interception for the schedule API.
+    modulesInScope:
+      - e2e/fixtures/auth.ts        # to create
+      - e2e/fixtures/network.ts     # to create
+    acceptanceCriteria:
+      - "Fixtures importable and used by the scheduling spec"
+      - "No live network or real auth in the e2e run"
+    parent: e2e-schedule-journey
+
+  # --- CI gate, no test cases ---
+  - key: ci-test-gates
+    title: "CI: wire test + e2e jobs into the PR pipeline"
+    layer: ci
+    priority: medium
+    estimate: 2
+    labels: [ci]
+    description: |
+      Run lint, type-check, and unit+integration+component on every PR; run e2e
+      as a separate job against a built app + mocked backend with artifact upload.
+    modulesInScope:
+      - .github/workflows/test.yml    # to create or extend
+    acceptanceCriteria:
+      - "PR job runs lint, type-check, unit, integration, component and must be green to merge"
+      - "Separate e2e job uploads trace/video/screenshots on failure"
+      - "Coverage floor enforced on the logic-core modules"
+    blockedBy: [unit-recurrence, integration-schedule-endpoint, e2e-schedule-journey]

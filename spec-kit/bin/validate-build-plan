@@ -1,0 +1,239 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonschema>=4.20", "pyyaml>=6"]
+# ///
+"""Validate a tracker-neutral build plan.
+
+Checks the JSON Schema (build-plan.schema.json) plus the four constraints the
+schema cannot express -- key uniqueness, referential integrity of parent/blockedBy,
+acyclicity, and non-empty real-looking paths -- AND two cross-artifact checks that
+make the traceability spine enforced rather than aspirational:
+
+  * every constraintRefs key exists in the constraint envelope (constraints.yaml);
+  * every tracesTo id exists in the product spec (PRODUCT_SPEC.md).
+
+The constraint envelope is resolved from --constraints, else the plan's top-level
+`constraints:` field (relative to the plan), else a sibling constraints.yaml. The
+product spec is resolved from --product-spec, else a sibling PRODUCT_SPEC.md. If a
+plan uses constraintRefs / tracesTo but the corresponding source can't be found,
+that is a usage error (exit 2): these references are validated against their source,
+never in a vacuum.
+
+Usage:
+    validate-build-plan PLAN.yaml [--schema PATH] [--constraints PATH] [--product-spec PATH]
+
+Exit codes: 0 = valid, 1 = invalid, 2 = usage/IO error.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+import yaml
+from jsonschema import Draft202012Validator
+
+HERE = Path(__file__).resolve().parent
+DEFAULT_SCHEMA = HERE.parent / "reference" / "build-plan.schema.json"
+
+PR_ID = re.compile(r"\bPR-[a-z0-9]+(?:-[a-z0-9]+)*\b")
+
+
+def fail(errors: list[str]) -> None:
+    print("invalid:", file=sys.stderr)
+    for e in errors:
+        print(f"  - {e}", file=sys.stderr)
+    sys.exit(1)
+
+
+def usage_error(msg: str) -> None:
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def check_structure(plan: dict) -> list[str]:
+    """The four checks JSON Schema can't express (shared with every plan validator)."""
+    errors: list[str] = []
+    tickets = plan.get("tickets", []) or []
+
+    keys = [t.get("key") for t in tickets if isinstance(t, dict)]
+    seen, dupes = set(), set()
+    for k in keys:
+        (dupes.add(k) if k in seen else seen.add(k))
+    for k in sorted(dupes):
+        errors.append(f"duplicate ticket key: {k!r}")
+    known = set(keys)
+
+    milestone_key = (plan.get("milestone") or {}).get("key")
+    if milestone_key in known:
+        errors.append(f"milestone key {milestone_key!r} collides with a ticket key")
+
+    for t in tickets:
+        if not isinstance(t, dict):
+            continue
+        k = t.get("key")
+        parent = t.get("parent")
+        if parent is not None and parent not in known:
+            errors.append(f"{k!r}: parent {parent!r} is not a ticket in this plan")
+        if parent == k:
+            errors.append(f"{k!r}: parent references itself")
+        for b in t.get("blockedBy", []) or []:
+            if b not in known:
+                errors.append(f"{k!r}: blockedBy {b!r} is not a ticket in this plan")
+            if b == k:
+                errors.append(f"{k!r}: blockedBy references itself")
+
+    # Cycle detection over the combined parent + blockedBy dependency graph.
+    graph = {k: set() for k in known}
+    for t in tickets:
+        if not isinstance(t, dict):
+            continue
+        k = t.get("key")
+        if t.get("parent") in known:
+            graph[k].add(t["parent"])
+        for b in t.get("blockedBy", []) or []:
+            if b in known:
+                graph[k].add(b)
+
+    WHITE, GREY, BLACK = 0, 1, 2
+    color = {k: WHITE for k in known}
+    reported: set = set()
+
+    def visit(node: str, stack: list[str]) -> None:
+        color[node] = GREY
+        for dep in graph.get(node, ()):
+            if color[dep] == GREY:
+                cycle = stack[stack.index(dep):] + [dep]
+                sig = frozenset(cycle)
+                if sig not in reported:
+                    reported.add(sig)
+                    errors.append("dependency cycle: " + " -> ".join(cycle))
+            elif color[dep] == WHITE:
+                visit(dep, stack + [dep])
+        color[node] = BLACK
+
+    for k in known:
+        if color[k] == WHITE:
+            visit(k, [k])
+
+    # Real-looking paths: no empty/placeholder entries.
+    placeholders = {"the relevant files", "tbd", "todo", "..."}
+    for t in tickets:
+        if not isinstance(t, dict):
+            continue
+        for p in t.get("modulesInScope", []) or []:
+            if not p or not p.strip() or p.strip().lower() in placeholders:
+                errors.append(f"{t.get('key')!r}: placeholder/empty path in modulesInScope: {p!r}")
+
+    return errors
+
+
+def resolve_constraint_keys(args_constraints, plan, plan_path, needed) -> set[str]:
+    """Load constraint keys, requiring a source iff any constraintRefs are used."""
+    if not needed:
+        return set()
+    path = None
+    if args_constraints:
+        path = Path(args_constraints)
+    elif plan.get("constraints"):
+        path = plan_path.parent / plan["constraints"]
+    else:
+        candidate = plan_path.parent / "constraints.yaml"
+        if candidate.exists():
+            path = candidate
+    if path is None:
+        usage_error(
+            "this plan uses constraintRefs but no constraint envelope was found. "
+            "Pass --constraints PATH, set the plan's top-level `constraints:` field, "
+            "or place a constraints.yaml beside the plan."
+        )
+    try:
+        doc = yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError) as e:
+        usage_error(f"reading constraints {str(path)!r}: {e}")
+    return {c.get("key") for c in (doc.get("constraints", []) or []) if isinstance(c, dict)}
+
+
+def resolve_pr_ids(args_product_spec, plan_path, needed) -> set[str]:
+    """Load PR-* ids from the product spec, requiring it iff any tracesTo are used."""
+    if not needed:
+        return set()
+    path = None
+    if args_product_spec:
+        path = Path(args_product_spec)
+    else:
+        candidate = plan_path.parent / "PRODUCT_SPEC.md"
+        if candidate.exists():
+            path = candidate
+    if path is None:
+        usage_error(
+            "this plan uses tracesTo but no product spec was found. "
+            "Pass --product-spec PATH, or place a PRODUCT_SPEC.md beside the plan."
+        )
+    try:
+        text = path.read_text()
+    except OSError as e:
+        usage_error(f"reading product spec {str(path)!r}: {e}")
+    return set(PR_ID.findall(text))
+
+
+def check_cross_artifact(plan, constraint_keys, pr_ids) -> list[str]:
+    errors: list[str] = []
+    for t in plan.get("tickets", []) or []:
+        if not isinstance(t, dict):
+            continue
+        k = t.get("key")
+        for ref in t.get("constraintRefs", []) or []:
+            if ref not in constraint_keys:
+                errors.append(f"{k!r}: constraintRefs {ref!r} not found in the constraint envelope")
+        for ref in t.get("tracesTo", []) or []:
+            if ref not in pr_ids:
+                errors.append(f"{k!r}: tracesTo {ref!r} not found in the product spec")
+    return errors
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Validate a tracker-neutral build plan.")
+    ap.add_argument("plan", help="path to build-plan.yaml (or .json)")
+    ap.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="path to the JSON Schema")
+    ap.add_argument("--constraints", default=None, help="path to constraints.yaml (for constraintRefs)")
+    ap.add_argument("--product-spec", default=None, help="path to PRODUCT_SPEC.md (for tracesTo)")
+    args = ap.parse_args()
+
+    plan_path = Path(args.plan)
+    try:
+        schema = json.loads(Path(args.schema).read_text())
+        plan = yaml.safe_load(plan_path.read_text())
+    except (OSError, json.JSONDecodeError, yaml.YAMLError) as e:
+        usage_error(f"reading inputs: {e}")
+
+    if not isinstance(plan, dict):
+        fail(["plan is not a mapping/object"])
+
+    schema_errors = sorted(
+        Draft202012Validator(schema).iter_errors(plan),
+        key=lambda e: list(e.path),
+    )
+    errors = [f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in schema_errors]
+
+    # Structural + cross-artifact checks only make sense once the shape is right.
+    if not errors:
+        errors += check_structure(plan)
+
+        tickets = plan.get("tickets", []) or []
+        needs_constraints = any(t.get("constraintRefs") for t in tickets if isinstance(t, dict))
+        needs_pr = any(t.get("tracesTo") for t in tickets if isinstance(t, dict))
+        constraint_keys = resolve_constraint_keys(args.constraints, plan, plan_path, needs_constraints)
+        pr_ids = resolve_pr_ids(args.product_spec, plan_path, needs_pr)
+        errors += check_cross_artifact(plan, constraint_keys, pr_ids)
+
+    if errors:
+        fail(errors)
+    print(f"ok -- {args.plan} is a valid build plan ({len(plan.get('tickets', []))} tickets)")
+
+
+if __name__ == "__main__":
+    main()

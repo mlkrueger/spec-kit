@@ -1,0 +1,149 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonschema>=4.20", "pyyaml>=6"]
+# ///
+"""Validate a tracker-neutral ticket plan.
+
+Checks the JSON Schema (ticket-plan.schema.json) plus the four constraints the
+schema cannot express: key uniqueness, referential integrity of parent/blockedBy,
+acyclicity, and non-empty real-looking paths.
+
+Usage:
+    validate-plan PLAN.yaml [--schema PATH]
+
+Exit codes: 0 = valid, 1 = invalid, 2 = usage/IO error.
+The schema defaults to ../reference/ticket-plan.schema.json relative to this script.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import yaml
+from jsonschema import Draft202012Validator
+
+HERE = Path(__file__).resolve().parent
+DEFAULT_SCHEMA = HERE.parent / "reference" / "ticket-plan.schema.json"
+
+
+def fail(errors: list[str]) -> None:
+    print("invalid:", file=sys.stderr)
+    for e in errors:
+        print(f"  - {e}", file=sys.stderr)
+    sys.exit(1)
+
+
+def check_constraints(plan: dict) -> list[str]:
+    """The four checks JSON Schema can't express."""
+    errors: list[str] = []
+    tickets = plan.get("tickets", []) or []
+
+    keys = [t.get("key") for t in tickets if isinstance(t, dict)]
+    seen, dupes = set(), set()
+    for k in keys:
+        (dupes.add(k) if k in seen else seen.add(k))
+    for k in sorted(dupes):
+        errors.append(f"duplicate ticket key: {k!r}")
+    known = set(keys)
+
+    milestone_key = (plan.get("milestone") or {}).get("key")
+    if milestone_key in known:
+        errors.append(f"milestone key {milestone_key!r} collides with a ticket key")
+
+    # Referential integrity for parent + blockedBy.
+    for t in tickets:
+        if not isinstance(t, dict):
+            continue
+        k = t.get("key")
+        parent = t.get("parent")
+        if parent is not None and parent not in known:
+            errors.append(f"{k!r}: parent {parent!r} is not a ticket in this plan")
+        if parent == k:
+            errors.append(f"{k!r}: parent references itself")
+        for b in t.get("blockedBy", []) or []:
+            if b not in known:
+                errors.append(f"{k!r}: blockedBy {b!r} is not a ticket in this plan")
+            if b == k:
+                errors.append(f"{k!r}: blockedBy references itself")
+
+    # Cycle detection over the combined parent + blockedBy dependency graph.
+    graph = {k: set() for k in known}
+    for t in tickets:
+        if not isinstance(t, dict):
+            continue
+        k = t.get("key")
+        if t.get("parent") in known:
+            graph[k].add(t["parent"])
+        for b in t.get("blockedBy", []) or []:
+            if b in known:
+                graph[k].add(b)
+
+    WHITE, GREY, BLACK = 0, 1, 2
+    color = {k: WHITE for k in known}
+    reported: set[tuple] = set()
+
+    def visit(node: str, stack: list[str]) -> None:
+        color[node] = GREY
+        for dep in graph.get(node, ()):
+            if color[dep] == GREY:
+                cycle = stack[stack.index(dep):] + [dep]
+                sig = frozenset(cycle)
+                if sig not in reported:
+                    reported.add(sig)
+                    errors.append("dependency cycle: " + " -> ".join(cycle))
+            elif color[dep] == WHITE:
+                visit(dep, stack + [dep])
+        color[node] = BLACK
+
+    for k in known:
+        if color[k] == WHITE:
+            visit(k, [k])
+
+    # Real-looking paths: no empty/placeholder entries.
+    placeholders = {"the relevant files", "tbd", "todo", "..."}
+    for t in tickets:
+        if not isinstance(t, dict):
+            continue
+        for p in t.get("modulesInScope", []) or []:
+            if not p or not p.strip() or p.strip().lower() in placeholders:
+                errors.append(f"{t.get('key')!r}: placeholder/empty path in modulesInScope: {p!r}")
+
+    return errors
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Validate a tracker-neutral ticket plan.")
+    ap.add_argument("plan", help="path to ticket-plan.yaml (or .json)")
+    ap.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="path to the JSON Schema")
+    args = ap.parse_args()
+
+    try:
+        schema = json.loads(Path(args.schema).read_text())
+        plan = yaml.safe_load(Path(args.plan).read_text())
+    except (OSError, json.JSONDecodeError, yaml.YAMLError) as e:
+        print(f"error reading inputs: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    if not isinstance(plan, dict):
+        fail(["plan is not a mapping/object"])
+
+    schema_errors = sorted(
+        Draft202012Validator(schema).iter_errors(plan),
+        key=lambda e: list(e.path),
+    )
+    errors = [f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in schema_errors]
+
+    # Structural constraints only make sense once the shape is roughly right.
+    if not errors:
+        errors += check_constraints(plan)
+
+    if errors:
+        fail(errors)
+    print(f"ok -- {args.plan} is a valid ticket plan ({len(plan.get('tickets', []))} tickets)")
+
+
+if __name__ == "__main__":
+    main()

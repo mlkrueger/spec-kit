@@ -1,0 +1,90 @@
+version: 1
+spec: ACCEPTANCE_SPEC.md
+title: "Acceptance plan — Guest Checkout"
+milestone:
+  key: guest-checkout-e2e
+  name: "Guest Checkout — Acceptance"
+  description: "Up-front E2E journeys from PRODUCT_SPEC.md acceptance criteria; the outer red->green for the feature."
+
+tickets:
+  # --- the harness blocks every journey ---
+  - key: e2e-harness
+    title: "Harness: built app + mocked backend for guest-checkout journeys"
+    layer: harness
+    stack: js-frontend
+    description: |
+      Stand up the E2E rig: built app, test-only auth bypass (seeded session), intercepted
+      payment-processor and mail-provider HTTP with fixed responses (incl. their failure
+      responses), and a fake order store reset to a known fixture before each journey.
+    modulesInScope:
+      - "e2e/support/harness.ts"
+      - "e2e/support/mock-backend.ts"
+      - "e2e/fixtures/guest-checkout.seed.ts"
+    acceptanceCriteria:
+      - "app builds and serves under the E2E runner"
+      - "payment processor and mail provider are intercepted; can return confirmed/declined/timeout"
+      - "store resets to the seed fixture before each journey (deterministic, order-independent)"
+      - "no real credentials or live network used"
+
+  # --- journeys: each a user-observable path, traced to a PR-* ---
+  - key: e2e-guest-checkout-happy
+    title: "E2E: guest completes checkout without an account"
+    layer: e2e
+    stack: js-frontend
+    description: |
+      The primary journey: a shopper with an item checks out as a guest, pays, and sees a
+      confirmation. No account exists afterward. Asserts only what the user observes.
+    cases:
+      - "Given a guest with one item in the cart who chose guest checkout, When they submit valid contact, shipping, and payment, Then an order confirmation with an order number is shown"
+      - "Given the placed order, When the confirmation appears, Then it shows an item/total summary and a confirmation message is queued to the entered email"
+      - "Given the completed guest purchase, When checkout finishes, Then no account exists for that email"
+    tracesTo: ["PR-checkout-guest", "PR-guest-confirmation"]
+    modulesInScope:
+      - "e2e/guest-checkout-happy.e2e.ts"
+      - "e2e/support/harness.ts"
+      - "e2e/fixtures/guest-checkout.seed.ts"
+    blockedBy: ["e2e-harness"]
+    acceptanceCriteria:
+      - "journey passes against the built app + mocked backend"
+      - "asserts only user-observable outcomes (no internal module references)"
+      - "runs in the separate E2E CI job; trace/video/screenshots uploaded on failure"
+
+  - key: e2e-guest-checkout-declined
+    title: "E2E: declined payment keeps the shopper on the payment step, uncharged"
+    layer: e2e
+    stack: js-frontend
+    description: |
+      The highest-stakes error journey: a declined charge must not place an order or charge
+      the shopper, and must preserve their entered details with a plain-language reason.
+    cases:
+      - "Given a guest at the payment step, When the processor declines the charge, Then they stay on the payment step with a plain-language reason and their entered details preserved"
+      - "Given the decline, When the shopper checks, Then no order was created and no charge was captured"
+    tracesTo: ["PR-checkout-guest"]
+    modulesInScope:
+      - "e2e/guest-checkout-declined.e2e.ts"
+      - "e2e/support/mock-backend.ts"
+    blockedBy: ["e2e-harness"]
+    acceptanceCriteria:
+      - "journey passes with the processor mock returning a decline"
+      - "asserts no order recorded and no charge captured (user-observable)"
+      - "runs in the separate E2E CI job; artifacts on failure"
+
+  - key: e2e-guest-order-lookup
+    title: "E2E: guest looks up a prior order by email + order number"
+    layer: e2e
+    stack: js-frontend
+    description: |
+      The lookup journey, including the no-enumeration edge: a non-matching pair must show a
+      neutral no-match message without revealing whether the email exists.
+    cases:
+      - "Given a prior guest order, When the guest enters its email and order number, Then the order status and summary are shown"
+      - "Given a non-matching email/order-number pair, When submitted, Then a neutral no-match message is shown and account existence is not revealed"
+    tracesTo: ["PR-order-lookup-guest"]
+    modulesInScope:
+      - "e2e/guest-order-lookup.e2e.ts"
+      - "e2e/fixtures/guest-checkout.seed.ts"
+    blockedBy: ["e2e-harness"]
+    acceptanceCriteria:
+      - "matching-pair journey shows status + summary"
+      - "non-matching pair shows a uniform neutral message (no account-existence disclosure)"
+      - "runs in the separate E2E CI job; artifacts on failure"

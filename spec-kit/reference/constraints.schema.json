@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mkrueger/technical-spec/reference/constraints.schema.json",
+  "title": "Technical-spec constraint envelope",
+  "description": "The machine-readable hard/soft constraint envelope produced by the technical-spec-architect agent alongside TECHNICAL_SPEC.md. Downstream agents (build-plan, acceptance-spec, a coding/IaC agent) consume the HARD constraints as non-negotiable givens and treat SOFT constraints as overridable defaults. The file holds the bounding decisions only; the design rationale narrative lives in the spec.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "spec", "constraints"],
+  "properties": {
+    "version": {
+      "description": "Schema version of this file. Bump only on breaking schema changes.",
+      "const": 1
+    },
+    "spec": {
+      "description": "Filename of the companion technical specification (e.g. TECHNICAL_SPEC.md).",
+      "type": "string",
+      "minLength": 1
+    },
+    "constraints": {
+      "description": "The flat list of constraints bounding the solution space.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/constraint" }
+    }
+  },
+  "$defs": {
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "kind", "category", "statement", "rationale", "owner"],
+      "properties": {
+        "key": {
+          "description": "Stable, unique, kebab-case identifier for the constraint. MUST be unique across the file. This is the load-bearing identity referenced by downstream build-plan tickets' `constraintRefs`, so a linter can check generated code/IaC against it.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "kind": {
+          "description": "HARD = non-negotiable, externally imposed; downstream agents may not violate it. SOFT = strong default, overridable with documented justification (requires an escapeHatch).",
+          "type": "string",
+          "enum": ["hard", "soft"]
+        },
+        "category": {
+          "description": "Free-form grouping for scannability and routing (e.g. platform, language, datastore, compliance, security, performance, cost, topology).",
+          "type": "string",
+          "minLength": 1
+        },
+        "statement": {
+          "description": "The constraint itself, stated precisely enough to check against (e.g. 'Python 3.12 for all services', 'p99 interaction latency < 200 ms').",
+          "type": "string",
+          "minLength": 1
+        },
+        "rationale": {
+          "description": "Why this constraint exists — the external force (for hard) or the default's justification (for soft). A hard constraint with no real external force is probably soft.",
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "description": "The team or role accountable for this constraint. A constraint nobody owns is unenforceable.",
+          "type": "string",
+          "minLength": 1
+        },
+        "escapeHatch": {
+          "description": "REQUIRED for soft constraints: what a valid override looks like (e.g. 'Document the workload need and the chosen alternative in an ADR'). Forbidden on hard constraints — they have no escape hatch.",
+          "type": "string",
+          "minLength": 1
+        },
+        "tracesTo": {
+          "description": "Optional PR-* product-requirement IDs this constraint is motivated by (the traceability spine). Each must look like a PR-* id; the validator checks the shape and, when a product spec is available, existence.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^PR-[a-z0-9]+(-[a-z0-9]+)*$" },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "description": "Soft constraints MUST carry an escape hatch.",
+          "if": {
+            "properties": { "kind": { "const": "soft" } }
+          },
+          "then": {
+            "required": ["escapeHatch"]
+          }
+        },
+        {
+          "description": "Hard constraints MUST NOT carry an escape hatch.",
+          "if": {
+            "properties": { "kind": { "const": "hard" } }
+          },
+          "then": {
+            "not": { "required": ["escapeHatch"] }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,164 @@
+version: 1
+spec: BUILD_PLAN.md
+constraints: constraints.example.yaml
+title: "Build plan — Guest Checkout"
+milestone:
+  key: guest-checkout
+  name: "Guest Checkout"
+  description: "Test-first implementation of guest checkout, decomposed from TECHNICAL_SPEC.md."
+
+tickets:
+  # --- foundational seams first: interface + harness block their consumers ---
+  - key: order-store-interface
+    title: "Interface: order store contract"
+    layer: interface
+    stack: python
+    tier: standard
+    description: |
+      Define the order-store seam the coordinator and lookup depend on: recordOrder and
+      findOrder, with a uniform NotFound that cannot distinguish unknown-email from
+      wrong-pair (supports the no-enumeration requirement).
+    interface: |
+      recordOrder(order: GuestOrder) -> orderNumber: str
+      findOrder(email: str, orderNumber: str) -> OrderView | NotFound
+    tddCases:
+      - "recordOrder(valid order) -> returns a non-empty opaque orderNumber"
+      - "findOrder(known email + matching orderNumber) -> OrderView with status + summary"
+      - "findOrder(known email + wrong orderNumber) -> NotFound"
+      - "findOrder(unknown email) -> NotFound indistinguishable from the wrong-pair case"
+      - "OrderView never contains card data (assert no card fields present)"
+    modulesInScope:
+      - "src/orders/store.py"
+      - "tests/orders/test_store_unit.py"
+      - "tests/orders/conftest.py"
+    constraintRefs: ["lang-python", "db-postgres", "pci-no-card-storage"]
+    tracesTo: ["PR-order-lookup-guest"]
+    acceptanceCriteria:
+      - "tddCases written first and failing (red) before implementation"
+      - "all tddCases pass (green); refactored clean with tests green"
+      - "no card fields exist on OrderView or GuestOrder (honors pci-no-card-storage)"
+      - "logic-core coverage floor met; lint and type-check green; no skipped tests"
+
+  - key: checkout-harness
+    title: "Harness: fake payment processor + order-store fixtures"
+    layer: harness
+    stack: python
+    tier: standard
+    description: |
+      Shared test harness: a hand-rolled fake payment processor (so tests can assert the
+      charge payload and simulate decline/timeout) and seeded order-store fixtures.
+    modulesInScope:
+      - "tests/support/fake_payment_processor.py"
+      - "tests/orders/conftest.py"
+    constraintRefs: ["lang-python", "pci-no-card-storage"]
+    acceptanceCriteria:
+      - "fake processor can return confirmed, declined, and timeout outcomes"
+      - "fixtures reset between tests (no shared mutable state); tests pass in any order"
+      - "fake asserts the charge payload carries no raw card data"
+
+  # --- the core feature: depends on the interface + harness ---
+  - key: place-guest-order
+    title: "Feature: place a guest order (record iff charge confirmed)"
+    layer: feature
+    stack: python
+    tier: complex
+    description: |
+      The checkout coordinator: validate cart, capture contact/shipping/payment intent,
+      delegate the charge, and record the order ONLY on a confirmed charge. Owns the
+      'never charge without confirming' invariant. Security-sensitive payment path -> complex.
+    interface: |
+      placeGuestOrder(cart, contact, shipping, paymentIntent)
+        -> OrderConfirmation | CheckoutError
+    tddCases:
+      - "valid cart + confirmed charge -> OrderConfirmation with orderNumber; order recorded once"
+      - "declined charge -> CheckoutError; no order recorded; shopper not charged"
+      - "processor timeout -> fail closed: no order recorded; retryable CheckoutError (error branch)"
+      - "empty cart -> rejected before any charge attempt"
+      - "double-submit of the same intent -> at most one charge and one order (idempotent)"
+    modulesInScope:
+      - "src/checkout/coordinator.py"
+      - "src/orders/store.py"
+      - "tests/checkout/test_coordinator_integration.py"
+      - "tests/support/fake_payment_processor.py"
+    constraintRefs: ["lang-python", "pci-no-card-storage", "latency-checkout", "compliance-soc2"]
+    tracesTo: ["PR-checkout-guest"]
+    blockedBy: ["order-store-interface", "checkout-harness"]
+    acceptanceCriteria:
+      - "tddCases written first and failing (red) before implementation"
+      - "record-iff-confirmed invariant holds across confirmed/declined/timeout (green)"
+      - "no card data stored or logged (honors pci-no-card-storage)"
+      - "charge-confirmed-without-order count is provably 0 in tests"
+      - "logic-core coverage floor met; lint and type-check green; no skipped tests"
+
+  - key: guest-order-confirmation
+    title: "Feature: synchronous confirmation + out-of-band message"
+    layer: feature
+    stack: python
+    tier: standard
+    description: |
+      Return the OrderConfirmation synchronously (primary proof) and fire-and-forget the
+      emailed confirmation so a slow/failed message provider never blows the latency budget
+      or fails a paid order.
+    interface: |
+      sendConfirmation(email, OrderConfirmation) -> Delivered | DeliveryFailed   # out of band
+    tddCases:
+      - "placed order -> OrderConfirmation returned synchronously with orderNumber + summary"
+      - "Notifier DeliveryFailed -> order remains placed (no rollback); failure recorded for retry"
+      - "confirmation is dispatched exactly once per placed order"
+    modulesInScope:
+      - "src/checkout/coordinator.py"
+      - "src/notify/notifier.py"
+      - "tests/notify/test_notifier_unit.py"
+    constraintRefs: ["lang-python", "latency-checkout"]
+    tracesTo: ["PR-guest-confirmation"]
+    blockedBy: ["place-guest-order"]
+    acceptanceCriteria:
+      - "tddCases written first and failing (red) before implementation"
+      - "a DeliveryFailed never rolls back a placed order (green)"
+      - "confirmation latency path does not block on the message provider"
+      - "lint and type-check green; no skipped tests"
+
+  - key: guest-order-lookup
+    title: "Feature: look up a guest order by email + order number"
+    layer: feature
+    stack: python
+    tier: simple
+    description: |
+      Read-only lookup over the order store. Mechanical given the interface ticket's seam ->
+      simple tier: a cheap executor can drive red->green->refactor from the failing tests.
+    interface: |
+      lookupOrder(email, orderNumber) -> OrderView | NotFound
+    tddCases:
+      - "matching email + orderNumber -> OrderView with current status + summary"
+      - "non-matching pair -> uniform NotFound (no account-existence disclosure)"
+      - "OrderView carries no card data"
+    modulesInScope:
+      - "src/orders/lookup.py"
+      - "src/orders/store.py"
+      - "tests/orders/test_lookup_integration.py"
+    constraintRefs: ["lang-python", "db-postgres"]
+    tracesTo: ["PR-order-lookup-guest"]
+    blockedBy: ["order-store-interface"]
+    acceptanceCriteria:
+      - "tddCases written first and failing (red) before implementation"
+      - "uniform NotFound proven for unknown-email and wrong-pair (green)"
+      - "lint and type-check green; no skipped tests"
+
+  # --- the done-gate: every build plan emits a ci ticket ---
+  - key: done-gate
+    title: "CI: feature done-gate (build suite AND acceptance plan green)"
+    layer: ci
+    stack: "-"
+    description: |
+      Wire the meta-gate asserting the feature is done: the inner suite (this build plan's
+      unit/integration tests) AND the outer acceptance-plan E2E job must both be green.
+      The build plan always emits this ticket.
+    modulesInScope:
+      - ".github/workflows/done-gate.yml"
+    constraintRefs: ["deploy-aws"]
+    tracesTo: ["PR-checkout-guest", "PR-guest-confirmation", "PR-order-lookup-guest"]
+    blockedBy: ["place-guest-order", "guest-order-confirmation", "guest-order-lookup"]
+    acceptanceCriteria:
+      - "gate requires the unit/integration job green"
+      - "gate requires the acceptance-plan E2E job green"
+      - "merge to the protected branch is blocked unless both are green"

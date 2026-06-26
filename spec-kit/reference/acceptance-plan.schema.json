@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mkrueger/spec-kit/reference/acceptance-plan.schema.json",
+  "title": "Tracker-neutral acceptance plan",
+  "description": "A tracker-agnostic plan of up-front end-to-end / acceptance tickets derived from the PRODUCT spec's acceptance criteria — the outer TDD loop for the whole feature, writable before any code exists. Produced by the acceptance-spec-architect agent; consumed by an execution agent and tracker publishers. Holds INTENT only — no tracker-specific fields. Sibling to build-plan.schema.json (what to build, test-first) and ticket-plan.schema.json (what to test); this one is what JOURNEYS must pass.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "title", "milestone", "tickets"],
+  "properties": {
+    "version": { "description": "Schema version. Bump only on breaking changes.", "const": 1 },
+    "spec": {
+      "description": "Filename of the companion human-readable acceptance spec (e.g. ACCEPTANCE_SPEC.md).",
+      "type": "string",
+      "minLength": 1
+    },
+    "title": { "description": "Human title for the plan.", "type": "string", "minLength": 1 },
+    "milestone": {
+      "description": "Single top-level grouping. Adapters map to a Linear Project/Milestone, Jira Epic, or GitHub Milestone.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name"],
+      "properties": {
+        "key": {
+          "description": "Stable, unique, kebab-case identifier. Used for idempotent re-publish.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      }
+    },
+    "tickets": {
+      "description": "Flat list of E2E/harness tickets. Ordering via parent + blockedBy by key (journeys blocked by their harness).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/ticket" }
+    }
+  },
+  "$defs": {
+    "ticketKey": {
+      "description": "Stable, unique, kebab-case ticket identity. Referenced by parent/blockedBy and STAMPED onto the created issue for idempotent re-publish.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "prId": {
+      "description": "A product-requirement ID from the product spec (the traceability spine).",
+      "type": "string",
+      "pattern": "^PR-[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "ticket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "title", "layer", "description", "modulesInScope", "acceptanceCriteria"],
+      "properties": {
+        "key": { "$ref": "#/$defs/ticketKey" },
+        "title": {
+          "description": "Concise human title. Prefix with the layer, e.g. 'E2E: guest checkout happy path'.",
+          "type": "string",
+          "minLength": 1
+        },
+        "layer": {
+          "description": "e2e = a user-observable journey against a built app + mocked backend (MUST carry cases + tracesTo). harness = the mocked-backend rig / seed fixtures the journeys depend on.",
+          "type": "string",
+          "enum": ["e2e", "harness"]
+        },
+        "stack": {
+          "description": "Stack/area key for polyglot repos (e.g. 'js-frontend'). Omit or use '-' for single-stack.",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Neutral priority. Adapters map to the tracker's scale via per-team config.",
+          "type": "string",
+          "enum": ["low", "medium", "high", "urgent"]
+        },
+        "estimate": { "description": "Neutral effort estimate (story points).", "type": "number", "minimum": 0 },
+        "labels": {
+          "description": "Free-form neutral labels. Adapters may prefix/translate them.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "description": {
+          "description": "Markdown body: the journey and why it matters. Adapters render this plus the other fields into the issue body.",
+          "type": "string",
+          "minLength": 1
+        },
+        "cases": {
+          "description": "The journeys as Given/When/Then, lifted from the product spec's acceptance criteria — user-observable, never referencing internal modules. Required for e2e tickets.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tracesTo": {
+          "description": "PR-* product-requirement IDs this journey exercises (the traceability spine). Required for e2e tickets; the validator checks each exists in the product spec.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/prId" },
+          "uniqueItems": true
+        },
+        "modulesInScope": {
+          "description": "REAL, verified paths: the E2E spec file (correct E2E naming infix), the mocked-backend harness, and seed fixtures. Never placeholders.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "acceptanceCriteria": {
+          "description": "Checkable Definition of Done as a checklist — not a restatement of the cases. Runs in the separate E2E CI job; artifacts on failure; asserts only user-observable outcomes.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "parent": {
+          "description": "Optional key of a parent ticket. A RELATIONSHIP, not nesting. Must reference another ticket's key.",
+          "$ref": "#/$defs/ticketKey"
+        },
+        "blockedBy": {
+          "description": "Keys of tickets that must be done first (e.g. the harness ticket a journey depends on). Must reference another ticket's key.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ticketKey" },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "description": "E2E tickets must enumerate journeys (cases) and trace to at least one requirement.",
+          "if": {
+            "properties": { "layer": { "const": "e2e" } }
+          },
+          "then": {
+            "required": ["cases", "tracesTo"],
+            "properties": {
+              "cases": { "minItems": 1 },
+              "tracesTo": { "minItems": 1 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

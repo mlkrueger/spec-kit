@@ -1,0 +1,64 @@
+version: 1
+spec: TECHNICAL_SPEC.md
+constraints:
+  - key: deploy-aws
+    kind: hard
+    category: platform
+    statement: "Deployed on AWS (us-east-1 primary, us-west-2 standby)."
+    rationale: "Existing org account and SOC2 boundary; data-residency must stay in-region."
+    owner: platform-team
+
+  - key: lang-python
+    kind: hard
+    category: language
+    statement: "Python 3.12 for all backend services."
+    rationale: "Team expertise and shared internal libraries; no second runtime to operate."
+    owner: eng-leadership
+
+  - key: compliance-soc2
+    kind: hard
+    category: compliance
+    statement: "All order and payment handling must remain within the SOC2-audited boundary."
+    rationale: "Contractual requirement for enterprise customers."
+    owner: security
+
+  - key: pci-no-card-storage
+    kind: hard
+    category: compliance
+    statement: "Card data is never stored or logged; payment is delegated to the PCI-compliant processor."
+    rationale: "Avoids bringing the system into PCI-DSS scope."
+    owner: security
+    tracesTo: ["PR-checkout-guest"]
+
+  - key: latency-checkout
+    kind: hard
+    category: performance
+    statement: "p99 checkout-submit-to-confirmation latency < 2000 ms."
+    rationale: "Numeric target for the product NFR 'feels instant' on the checkout path."
+    owner: eng-leadership
+    tracesTo: ["PR-checkout-guest"]
+
+  - key: db-postgres
+    kind: soft
+    category: datastore
+    statement: "Prefer PostgreSQL for transactional data unless a workload demands otherwise."
+    rationale: "Operational familiarity; strong transactional guarantees for orders."
+    owner: data-platform
+    escapeHatch: "Document the workload need and the chosen alternative in an ADR in TECHNICAL_SPEC.md."
+
+  - key: boring-tech
+    kind: soft
+    category: topology
+    statement: "Favor boring, well-understood technology over novel infrastructure."
+    rationale: "Minimize operational surface and on-call burden for a small team."
+    owner: eng-leadership
+    escapeHatch: "Justify the novel dependency against operability and on-call cost in an ADR."
+
+  - key: guest-data-retention
+    kind: soft
+    category: compliance
+    statement: "Retain guest order records for 24 months by default."
+    rationale: "Supports order lookup and returns without indefinite PII retention."
+    owner: security
+    escapeHatch: "A longer window requires a documented legal/finance requirement and DPO sign-off."
+    tracesTo: ["PR-order-lookup-guest"]

@@ -1,0 +1,10 @@
+{
+  "name": "spec-kit",
+  "version": "0.1.0",
+  "description": "The spec phase of an AI SDLC as one plugin: a chain of architect agents that turn an idea into a product spec, an engineering spec with a machine-readable hard/soft constraint envelope, and (coming) up-front acceptance tests plus a test-first build plan — linked by a PR-* traceability spine. Invoke any agent on its own, or do a full run for greenfield work.",
+  "author": {
+    "name": "Matthew Krueger",
+    "email": "matthew.l.krueger@gmail.com"
+  },
+  "keywords": ["spec", "product-spec", "technical-spec", "architecture", "constraints", "requirements", "adr", "aisdlc", "traceability"]
+}
