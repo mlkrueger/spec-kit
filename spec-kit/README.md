@@ -41,6 +41,9 @@ lookup, not a judgment call.
 | `reference/testing-standards-shared.md` | Cross-layer testing discipline: ticket specificity, determinism, "a spec precedes the suite." Shared by both downstream test agents. |
 | `reference/unit-integration-standards.md` | Lower-layer brain referenced inline by `build-plan-architect`: lowest-layer-that-proves-it, clock injection, the failure-mode catalog, red→green→refactor DoD. |
 | `reference/acceptance-standards.md` | E2E-only brain for `acceptance-spec-architect`: journey-not-click, mocked-backend harness, separate CI job. |
+| `agents/test-audit-architect.md` | Audits an **existing** repo's suites — scopable to unit / integration / e2e / all — against the testing standards: inventories + runs the real suites, scores each layer, emits evidence-grounded `TEST_AUDIT.md` + (on request) a validated test-backfill `build-plan.yaml`. Core rule: *every finding cites evidence; every gap names what breaks unobserved.* |
+| `reference/test-audit-standards.md` | The audit brain: evidence to collect, per-layer scoring dimensions, finding format, and the backfill-plan conventions (characterization discipline, refactor-blocks-test ordering). |
+| `skills/test-audit/` | `/spec-kit:test-audit [unit\|integration\|e2e\|all]` — one-off audit wrapper around the agent. |
 | `reference/traceability.md` | The shared `PR-*` requirement-ID spine. |
 | `reference/constraints-schema.md` + `.schema.json` | The constraint-envelope contract (prose + JSON Schema), plus the design note for future constraint linting. |
 | `reference/build-plan-schema.md` + `.schema.json` | The build-plan contract (prose + JSON Schema): inline `tddCases`, `constraintRefs`, `tracesTo`, `tier`. |
