@@ -4,12 +4,12 @@ Tracking loose ends for the `spec-kit` plugin (the `test-spec` plugin has been r
 
 ## To confirm before sharing
 
-- [ ] **Push to GitHub & confirm install flow.** Confirm the real remote slug, then:
-  ```
-  /plugin marketplace add <your-gh-username>/agent-specs
-  /plugin install spec-kit@agent-specs
-  ```
-  The `marketplace.json` currently assumes `mkrueger/agent-specs`; this is not yet a git repo locally.
+- [ ] **Align the GitHub remote with the documented slug.** The docs are canonical
+  (2026-07-05): `mkrueger/agent-specs` in README/`marketplace.json`, `mkrueger/dev-orchestrator`
+  for the companion link. The actual remote is currently `mlkrueger/spec-kit` — rename/move the
+  GitHub repo to match (then `git remote set-url origin git@github.com:mkrueger/agent-specs.git`),
+  or update the docs if the plan changes. Until they match, the README install flow
+  (`/plugin marketplace add mkrueger/agent-specs`) won't resolve.
 - [ ] **Publishers' MCP round-trip is unverified.** `publish-linear` and `publish-jira` are written
   against the Linear / Atlassian MCP tool names but have not been run against a live tracker (doing so
   creates real issues). Do a `--dry-run` against your Linear/Jira before relying on them. Confirm the
