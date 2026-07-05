@@ -94,12 +94,25 @@ Each ticket carries, beyond title/description:
   constraints honored.
 - **`blockedBy` / `parent`** — ordering and grouping by `key`.
 
-## Always emit the done-gate ticket
+## CI is explicit work, not a footnote
 
 Every build plan **must** include one `ci`-layer ticket wiring the **feature done-gate**: the inner
 suite (this plan's unit/integration tests) **and** the outer `acceptance-plan` E2E job must both be
 green before merge. This asserts the two TDD loops together. It `blockedBy` the feature tickets it
-gates. **In brownfield, the gate adds a third clause: the must-stay-green set (pre-existing tests +
+gates.
+
+Beyond the done-gate, the pipeline itself is explicit tickets whenever it is real work:
+
+- **When a `CI_SPEC.md` exists** (from the **ci-architect**), decompose it like any other spec: one
+  `ci` ticket per gate/job/promotion seam (merge-gate job, acceptance job, coverage-floor wiring,
+  required checks, environment/promotion setup), dependency-ordered — foundational pipeline tickets
+  early, since nothing verifies without them. Reference the spec'd bar each ticket enforces.
+- **When none exists and the repo has no pipeline**, emit the minimal `ci` tickets the plan's own
+  gates need (a merge-gate job running the inner suite, the separate acceptance job per
+  `${CLAUDE_PLUGIN_ROOT}/reference/ci-standards.md`'s two-job shape) — and note that a full
+  `/spec-kit:ci` design pass is the better path for environments/promotion/deploy.
+- **When a pipeline exists**, don't re-plan it — only the deltas this feature needs (a new job, a
+  new required check). **In brownfield, the gate adds a third clause: the must-stay-green set (pre-existing tests +
 existing E2E journeys outside the change) still green unchanged** — no regression introduced. **In
 change mode, a fourth: the must-be-migrated set fully migrated** — every test that asserted the old
 behavior now asserts the new one or is explicitly retired; none skipped, none silently deleted.

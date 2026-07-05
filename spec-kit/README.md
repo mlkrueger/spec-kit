@@ -44,6 +44,9 @@ lookup, not a judgment call.
 | `agents/test-audit-architect.md` | Audits an **existing** repo's suites — scopable to unit / integration / e2e / all — against the testing standards: inventories + runs the real suites, scores each layer, emits evidence-grounded `TEST_AUDIT.md` + (on request) a validated test-backfill `build-plan.yaml`. Core rule: *every finding cites evidence; every gap names what breaks unobserved.* |
 | `reference/test-audit-standards.md` | The audit brain: evidence to collect, per-layer scoring dimensions, finding format, and the backfill-plan conventions (characterization discipline, refactor-blocks-test ordering). |
 | `skills/test-audit/` | `/spec-kit:test-audit [unit\|integration\|e2e\|all]` — one-off audit wrapper around the agent. |
+| `agents/ci-architect.md` | The pipeline as its own first-class concern, dual mode. **Design:** `CI_SPEC.md` — gates traced to spec'd bars, budgets, required checks, environments/promotion, secrets, rollback — which the build plan turns into `ci` tickets. **Audit:** `CI_AUDIT.md` — the bar-diff (spec'd vs. wired-and-blocking) + findings, optional remediation `build-plan.yaml`. Core rule: *every gate traces to a bar; every bar is wired to a gate.* |
+| `reference/ci-standards.md` | The CI/CD brain: the two-job shape, required-checks enforcement, flake policy, speed budgets, build-once promotion, secrets, deploy/rollback, forge notes, the audit dimensions + failure-mode catalog. |
+| `skills/ci/` | `/spec-kit:ci [design\|audit]` — one-off pipeline design or audit wrapper around the agent. |
 | `reference/traceability.md` | The shared `PR-*` requirement-ID spine. |
 | `reference/constraints-schema.md` + `.schema.json` | The constraint-envelope contract (prose + JSON Schema), plus the design note for future constraint linting. |
 | `reference/build-plan-schema.md` + `.schema.json` | The build-plan contract (prose + JSON Schema): inline `tddCases`, `constraintRefs`, `tracesTo`, `tier`. |

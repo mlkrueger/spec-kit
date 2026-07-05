@@ -99,6 +99,11 @@ reasoned deferral. Silent omission is the failure mode:
 - **Data lifecycle** — retention, deletion, migration, backup/restore, RPO/RTO.
 - **Cost** — the rough cost envelope and what dominates it.
 - **Rollout & migration** — how this ships without downtime; how it rolls back.
+- **CI/CD & environments** — the pipeline gates this design requires (the merge gate + the separate
+  acceptance job), the environment list and promotion path, and any compliance constraint that must
+  be enforced in CI. Name the gates and environments as constraints here; the full pipeline design
+  is the **ci-architect**'s job (`CI_SPEC.md`, per `ci-standards.md`) — don't inline workflow
+  detail, and don't leave the gates unstated either.
 
 ## Requirements traceability (the spine)
 

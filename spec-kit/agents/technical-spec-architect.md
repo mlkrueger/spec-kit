@@ -100,6 +100,8 @@ this structure:
   (the numeric version of the product NFRs), scaling, data lifecycle, cost.
 - **Key decisions & alternatives** — ADR-lite: decision, why, rejected option(s), consequences.
 - **Rollout, migration & operational concerns.**
+- **CI/CD & environments** — the gates this design requires, the environment/promotion path, and
+  CI-enforced compliance constraints; the full pipeline contract is deferred to the **ci-architect**.
 - **Risks & open technical questions.**
 - **Requirements-traceability matrix** — every `PR-*` → where the design addresses it; flag any
   unaddressed.
