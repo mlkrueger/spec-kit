@@ -53,9 +53,12 @@ Tracking loose ends for the `spec-kit` plugin (the `test-spec` plugin has been r
 - [ ] **Build-plan fan-out** — for very large technical specs, parallelize one sub-plan per component
   (the agent already documents the merge seam).
 - [ ] **More profiles** — add `rust`, `java`, `ruby`, … as needed; one file each.
-- [ ] **Execution agent** — every hand-off names "an execution agent" that walks the build plan
-  red→green→refactor with tier routing; nothing in the plugin implements it yet. Decide: own agent
-  here, or explicitly out of scope (a separate plugin).
+- [x] **Execution agent — decided: out of scope.** Execution lives in a separate, focused plugin
+  (planning and execution stay two plugins). The seam is already clean: the validated
+  `build-plan.yaml` + `acceptance-plan.yaml` are the contract the execution plugin consumes; the
+  hand-off language ("an execution agent walks the tickets red→green→refactor with tier routing")
+  stays plugin-agnostic on purpose. If useful later: name the execution plugin in the run skill's
+  hand-off so users know what to invoke next.
 - [ ] **`designRefs` ticket field** — optional build-plan field mirroring `constraintRefs` for design
   contracts (additive; design doc §6). Skipped for v1 — guide references live in ticket prose.
 - [ ] **Validator tests + repo CI** — `bin/validate-*` have no test suite and this repo has no
