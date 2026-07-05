@@ -30,6 +30,12 @@ idea / brief / transcript
 Outside the chain, two standing agents work on what already exists: **test-audit-architect**
 (evaluate the real suites, plan the backfill) and **ci-architect** (design or audit the pipeline).
 
+Inside the chain, every artifact is **adversarially challenged before you review it**: the
+**spec-challenger** agent gets a cold read (same inputs as the architect, never its reasoning),
+files a severity-ranked disposition report, the architect revises or rebuts, and your checkpoint
+starts from the contested points instead of a cold 400-line read. The challenger **never edits the
+artifact** — findings, never fixes.
+
 Everything is linked by a **`PR-*` traceability spine** (`reference/traceability.md`): idea →
 requirement → design decision → ticket, so "is every requirement designed, built, and tested?" is a
 lookup, not a judgment call.
@@ -47,6 +53,9 @@ lookup, not a judgment call.
 | `reference/design-tokens-schema.md` + `.schema.json` | The token contract (prose + JSON Schema): two tiers, `contrastsWith`/`minContrast`, `source` provenance, `tracesTo`. |
 | `bin/validate-design-tokens` | Validates `design-tokens.yaml`: schema + alias resolution, the required role floor, **computed WCAG contrast on declared pairs**, `tracesTo` existence, reference-mode provenance warnings. |
 | `skills/design-spec/` | `/spec-kit:design-spec` — one-off design phase with the tile-first checkpoint. |
+| `agents/spec-challenger.md` | Adversarially challenges any phase artifact **before the human checkpoint**: cold read against the phase rubric, severity-ranked findings (`blocker`/`major`/`question`), bounded revise-or-rebut loop, disposition report at `reviews/CHALLENGE_<PHASE>.md`. No `Edit` tool by design. Core rule: *file findings, never fixes.* |
+| `reference/challenge-standards.md` | The challenge brain: independence rules, the finding bar + severity caps, the 2-pass loop with scope-locked pass 2 and rebuttal rights, the report format, per-phase attack rubrics. |
+| `skills/challenge/` | `/spec-kit:challenge <artifact>` — one-off single-pass challenge of any artifact (including hand-written specs that predate spec-kit); no loop. |
 | `reference/product-spec-standards.md` | Outside-in discipline, banned-vocabulary filter, INVEST bar, the NFR handoff, failure-mode catalog. |
 | `reference/technical-spec-standards.md` | Hard/soft constraint taxonomy, ADR-lite, cross-cutting checklist, failure-mode catalog. |
 | `reference/testing-standards-shared.md` | Cross-layer testing discipline: ticket specificity, determinism, "a spec precedes the suite." Shared by both downstream test agents. |
@@ -65,15 +74,15 @@ lookup, not a judgment call.
 | `bin/validate-constraints` | Validates `constraints.yaml` against the schema **and** non-schema rules (key uniqueness, escape-hatch rules, `tracesTo` existence against a required product spec). |
 | `bin/validate-build-plan` | Validates `build-plan.yaml`: schema + key uniqueness, referential integrity, acyclicity, real paths, **`constraintRefs` exist** in the envelope, **`tracesTo` exist** in the product spec. |
 | `bin/validate-acceptance-plan` | Validates `acceptance-plan.yaml`: schema + the four structural checks + **`tracesTo` exist** in the product spec. |
-| `skills/run/SKILL.md` | `/spec-kit:run` — drives the full spec chain (incl. the parallel design track for UI features) with a human-approval checkpoint between every phase (incl. the principal-eng + design reviews before the build plan). |
-| `skills/survey/`, `skills/product-spec/`, `skills/technical-spec/`, `skills/design-spec/`, `skills/acceptance-plan/`, `skills/build-plan/`, `skills/test-audit/`, `skills/ci/` | Per-phase skills: run any single phase or audit as a one-off — resolve inputs, invoke the architect, validate, present, stop. Shared ceremony in `reference/single-phase.md`. |
+| `skills/run/SKILL.md` | `/spec-kit:run` — drives the full spec chain (incl. the parallel design track for UI features) with a human-approval checkpoint between every phase (incl. the principal-eng + design reviews before the build plan), each artifact challenged by **spec-challenger** before its checkpoint (full loop for product/technical spec, single pass for design/plans, off on the light path). |
+| `skills/survey/`, `skills/product-spec/`, `skills/technical-spec/`, `skills/design-spec/`, `skills/acceptance-plan/`, `skills/build-plan/`, `skills/test-audit/`, `skills/ci/` | Per-phase skills: run any single phase or audit as a one-off — resolve inputs, invoke the architect, validate, challenge, present, stop. Shared ceremony in `reference/single-phase.md`. |
 | `skills/status/` | `/spec-kit:status` — read-only report per artifact set: exists / validates / **stale against upstream** (mtime along the dependency order), plus the `PR-*` coverage snapshot. |
 | `reference/single-phase.md` | The contract every per-phase skill obeys: input resolution, mode detection, validate-before-present, staleness warnings, present-and-stop. |
 | `skills/publish-linear/` + `skills/publish-jira/` | Publish a neutral `build-plan.yaml` / `acceptance-plan.yaml` to Linear or Jira, idempotently via key stamping. |
 | `reference/publishing.md` | The shared publishing contract both publishers obey: plan-kind detection, body rendering, idempotency, config. |
 | `reference/profiles/*.md` | Per-stack cards (`python`, `js-frontend`, `js-node`, `go`) — runner, single-test command, test-file naming infix, mocking seam, gotchas. Consumed by the build/acceptance agents. |
 | `reference/brownfield.md` | Brownfield methodology: survey-before-specifying (tiered: scoped vs. full), existing reality as constraints, repo grounding, feature scoping, **change mode** (behavior deltas, `Modifies:` links, test migration), the regression gate, and the light path for small changes. Cited by all agents + `/spec-kit:run`. |
-| `reference/examples/` | A worked guest-checkout set sharing one `PR-*` spine: `REPO_MAP`, `PRODUCT_SPEC`, `TECHNICAL_SPEC`, `constraints`, `build-plan`, `acceptance-plan`, `STYLE_TILE`, `UI_STYLE_GUIDE`, and `design-tokens` examples. |
+| `reference/examples/` | A worked guest-checkout set sharing one `PR-*` spine: `REPO_MAP`, `PRODUCT_SPEC`, `TECHNICAL_SPEC`, `constraints`, `build-plan`, `acceptance-plan`, `STYLE_TILE`, `UI_STYLE_GUIDE`, `design-tokens`, and `CHALLENGE_PRODUCT_SPEC` examples. |
 
 ## Full run vs. single agent
 
@@ -153,6 +162,9 @@ work use the build and acceptance plans.
 - **Machine-checkable side-artifacts** (`constraints.yaml`, `build-plan.yaml`,
   `acceptance-plan.yaml`, `design-tokens.yaml`) each get a `bin/validate-*` tool.
 - **Project-scoped agent memory**, committed to the repo, durable/non-obvious only.
+- **Contested before presented.** An independent challenger attacks each artifact before the human
+  gate; disagreements surface as dispositions the human adjudicates, never as silent convergence.
+  The challenger files findings, never fixes — the architect owns the artifact.
 
 ## Usage
 
@@ -162,6 +174,8 @@ work use the build and acceptance plans.
 - **Existing repos:** `/spec-kit:test-audit [unit|integration|e2e|all]` and
   `/spec-kit:ci [design|audit]` — evidence-grounded audits whose remediations become ordinary,
   publishable build plans.
+- **Adversarial review:** `/spec-kit:challenge <artifact>` — single-pass cold read of any spec or
+  plan; findings only, the artifact is never edited.
 - **Orientation:** `/spec-kit:status` — what exists, what validates, what went stale.
 - **Validate manually anytime:**
   ```sh

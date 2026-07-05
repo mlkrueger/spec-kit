@@ -46,7 +46,21 @@ Tracking loose ends for the `spec-kit` plugin (the `test-spec` plugin has been r
   AA floor mechanically enforced by `bin/validate-design-tokens`); threaded into run skill + build
   plan; worked examples added.
 
+## v0.3.0 round (2026-07) — done
+
+- [x] **`spec-challenger` — built** (`CHALLENGER_AGENT_DESIGN.md`, 2026-07-05). Adversarial review
+  of every artifact between validator and ⏸ checkpoint: bounded 2-pass loop, rebuttal rights,
+  disposition report (`reviews/CHALLENGE_<PHASE>.md`), hard "findings, never fixes" constraint (no
+  `Edit` tool). Shipped: `agents/spec-challenger.md`, `reference/challenge-standards.md`,
+  `skills/challenge/` (`/spec-kit:challenge`), threading into `run` + `single-phase.md` (full loop
+  for product/technical spec, single pass for design/plans, off on the light path), worked example
+  `CHALLENGE_PRODUCT_SPEC.example.md`, manifests to 0.3.0. **Panel variant deliberately deferred**
+  as a dial (design doc §7); challenge report is presentation/audit only, never downstream input.
+
 ## Future (deferred by design)
+
+- [ ] **Challenger panel** — N parallel challengers with distinct lenses, merged by target;
+  enable at the technical-spec gate first if ever (design doc §7 — a dial, not a redesign).
 
 - [ ] **Constraint linting** — make hard constraints mechanically enforced on generated code/IaC via an
   optional `check` predicate + a `lint-constraints` tool (design note in `constraints-schema.md`).

@@ -1,6 +1,6 @@
 ---
 name: run
-description: "Drive the full spec-phase chain for a feature: product spec -> technical spec + constraints -> acceptance plan + build plan, invoking each spec-kit architect agent in order and STOPPING for your approval between phases (including the principal-eng review between the technical spec and the build plan). Works greenfield (empty repo) or feature-addition (brownfield: surveys the existing repo first, scopes the feature, inherits existing conventions as constraints). For incremental tweaks, invoke a single architect agent directly instead. Triggers: 'do a full spec run', 'run spec-kit', 'spec this feature', 'add this feature to the repo', '/spec-kit:run'."
+description: "Drive the full spec-phase chain for a feature: product spec -> technical spec + constraints -> acceptance plan + build plan, invoking each spec-kit architect agent in order and STOPPING for your approval between phases (including the principal-eng review between the technical spec and the build plan). Each artifact is adversarially challenged by the spec-challenger agent before its checkpoint, so your review starts from the contested points. Works greenfield (empty repo) or feature-addition (brownfield: surveys the existing repo first, scopes the feature, inherits existing conventions as constraints). For incremental tweaks, invoke a single architect agent directly instead. Triggers: 'do a full spec run', 'run spec-kit', 'spec this feature', 'add this feature to the repo', '/spec-kit:run'."
 ---
 
 # Full spec-phase run
@@ -26,6 +26,11 @@ intake ─▶ [0] (feature mode only) repo survey ─▶ REPO_MAP.md
         ─▶ hand-off: execution + publishing (+ /spec-kit:ci when the pipeline needs work)
 ```
 
+Between each phase's validator and its ⏸ checkpoint sits an **adversarial challenge step** (the
+**spec-challenger** agent) — see "The challenge step" below. It hardens the draft and annotates
+what remains genuinely disputed, so each checkpoint presents the artifact *plus* a disposition
+report, leading with the contested points.
+
 ## Mode
 
 Determine the mode at the start; it shapes the whole run:
@@ -47,6 +52,7 @@ If unsure which mode, look: a populated repo with source + tests ⇒ feature; an
 the full chain: inline scoped survey → mini product spec (1–3 `PR-*`) → build plan (skip the technical
 spec when no architectural decision is being made), acceptance plan only if a user-observable journey
 changes. One combined checkpoint (mini spec + plan) replaces the per-phase gates; validators still run.
+**The challenge step is skipped on the light path** — a challenger on a bugfix-sized change is ceremony.
 
 ## Inputs
 
@@ -58,6 +64,38 @@ changes. One combined checkpoint (mini spec + plan) replaces the per-phase gates
 - **Resume:** if some artifacts already exist (for feature mode, under `features/<slug>/`), detect them
   and offer to **start from the first missing phase** rather than regenerating — confirm which phase to
   start at. Still honor every downstream checkpoint.
+
+## The challenge step (between validator and every ⏸)
+
+After a phase's artifact validates and before its checkpoint, launch the **spec-challenger** agent
+(Agent tool) per `${CLAUDE_PLUGIN_ROOT}/reference/challenge-standards.md`. Give it the artifact and
+the same upstream inputs the architect had — **never the architect's conversation or reasoning**
+(cold read is the point). It files a disposition report at `reviews/CHALLENGE_<PHASE>.md`
+(feature mode: `features/<slug>/reviews/`) and never edits the artifact.
+
+**The loop (this skill mediates; the agents never converse directly):**
+
+1. Challenger pass 1 → report with findings `open` (or an explicit certification).
+2. Route `blocker`/`major` findings to the architect (re-invoke with the report). `question`s skip
+   the loop — they ride the report straight to the human.
+3. The architect **revises or rebuts** per finding — it is never obligated to comply; rebuttals are
+   recorded verbatim in the report.
+4. Challenger pass 2, **scope-locked** (prior blockers/majors + revised sections only, no new
+   findings) → each finding marked `resolved` / `rebutted — stands` / `open — contested`.
+5. If the artifact changed, **re-run the phase validator** before presenting.
+
+**Per-phase defaults** (the user can widen or narrow per run):
+
+- **Product spec, technical spec (+ constraints):** full loop (2 passes) — errors there propagate
+  furthest, and the principal-eng review is the gate the report most improves.
+- **Design spec, acceptance plan, build plan:** single pass — challenge → architect responds →
+  checkpoint, no pass 2. Already backstopped by validators, the coverage cross-check, and (design)
+  the tile-first loop.
+- **Light path:** off.
+
+At the checkpoint, present the disposition report alongside the artifact, **leading with anything
+`open — contested`** — the human adjudicates those; this skill never breaks ties. The report is
+presentation + audit trail only: it is **never passed as input to downstream architects**.
 
 ## Procedure
 
@@ -91,7 +129,9 @@ phase's agent with the feedback and re-validate before re-presenting. Never skip
 1. Launch the **product-spec-architect** agent (Agent tool) with the brief (and `REPO_MAP.md` in feature
    mode). It asks its own clarifying questions if the brief is thin; let it.
 2. It writes `PRODUCT_SPEC.md` with `PR-*` requirement IDs (feature-prefixed in feature mode).
-3. **⏸ Checkpoint.** Show the user the product spec — especially the requirement list, non-goals, and
+3. **Challenge (full loop).** Run the challenge step on `PRODUCT_SPEC.md` against the product-spec
+   rubric — solutions in disguise, untestable criteria, missing non-goals, conflicting `PR-*`s.
+4. **⏸ Checkpoint.** Show the user the product spec — especially the requirement list, non-goals, and
    the user-facing NFRs. Confirm the `PR-*` set is right; these IDs are the spine everything downstream
    traces to. **Get approval before phase 2.**
 
@@ -111,12 +151,16 @@ phase's agent with the feedback and re-validate before re-presenting. Never skip
    ${CLAUDE_PLUGIN_ROOT}/bin/validate-constraints constraints.yaml --product-spec PRODUCT_SPEC.md
    ${CLAUDE_PLUGIN_ROOT}/bin/validate-design-tokens design-tokens.yaml --product-spec PRODUCT_SPEC.md
    ```
-4. **⏸ Checkpoint — the principal/staff-eng review.** This is the load-bearing human gate. Present the
+4. **Challenge.** Run the challenge step on `TECHNICAL_SPEC.md` + `constraints.yaml` (**full
+   loop**) — strawman alternatives, constraint-envelope gaps, NFR translations that don't follow,
+   repo contradictions — and, for UI features, on the design artifacts (**single pass**) — UX
+   states with no component, silently inherited accessibility deviations.
+5. **⏸ Checkpoint — the principal/staff-eng review.** This is the load-bearing human gate. Present the
    architecture, the hard/soft constraint envelope (owners + escape hatches), the ADR-lite decisions
    and their rejected alternatives, and the NFR→numeric translations. Surface anything risky. The
    constraint envelope is the only place platform/language/compliance is decided, so make sure it's
    right — downstream agents treat it as given.
-5. **⏸ Checkpoint — the design review (UI features only).** Present the **tile first** for tone
+6. **⏸ Checkpoint — the design review (UI features only).** Present the **tile first** for tone
    sign-off (reference mode: "did we extract your brand correctly?"), then the guide + tokens with
    the validator result, and any flagged **accessibility deviations** in the reference (the user
    decides — never silently fixed, never silently shipped). A tone change loops at the tile before
@@ -137,7 +181,11 @@ phase's agent with the feedback and re-validate before re-presenting. Never skip
    ${CLAUDE_PLUGIN_ROOT}/bin/validate-acceptance-plan acceptance-plan.yaml --product-spec PRODUCT_SPEC.md
    ${CLAUDE_PLUGIN_ROOT}/bin/validate-build-plan build-plan.yaml --constraints constraints.yaml --product-spec PRODUCT_SPEC.md
    ```
-3. **⏸ Checkpoint.** Present both plans together: the build plan's dependency order, `tier` tags, and
+3. **Challenge (single pass, both plans).** Run the challenge step — semantic traceability (does
+   the journey actually *verify* the `PR-*` it cites), missing failure-path journeys, wrong
+   dependency edges, `tddCases` that test implementation, `simple`-tier tickets that aren't,
+   greenfield-smelling `modulesInScope`.
+4. **⏸ Checkpoint.** Present both plans together: the build plan's dependency order, `tier` tags, and
    inline `tddCases`; the acceptance plan's journeys. Run the coverage cross-check below. **Get approval
    before hand-off.**
 
@@ -180,6 +228,10 @@ Summarize the artifacts produced and point to the next steps:
   for it. Silence is not approval.
 - **A failed validator blocks the checkpoint.** If an artifact doesn't validate, fix it (re-invoke the
   agent with the error) before presenting — never ask the user to approve an invalid artifact.
+- **Contested findings lead the presentation.** When the challenge step ran, present the disposition
+  report with the artifact, `open — contested` items first — those are the human's ruling to make.
+  Never suppress a contested finding to smooth an approval, and never present challenger opinions as
+  the architect's.
 - **Changes loop, don't skip.** If the user wants edits at a checkpoint, re-run that phase's agent with
   the feedback, re-validate, and re-present the *same* checkpoint. Downstream phases stay gated until
   the upstream artifact is approved, because they consume it.

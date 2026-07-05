@@ -2,8 +2,8 @@
 
 > The shared ceremony every per-phase skill (`/spec-kit:survey`, `/spec-kit:product-spec`,
 > `/spec-kit:technical-spec`, `/spec-kit:acceptance-plan`, `/spec-kit:build-plan`, …) obeys. Each
-> skill is a thin wrapper around one architect agent: resolve inputs, invoke, validate, present,
-> **stop**. `/spec-kit:run` chains the same phases with checkpoints between them; a per-phase skill
+> skill is a thin wrapper around one architect agent: resolve inputs, invoke, validate,
+> **challenge**, present, **stop**. `/spec-kit:run` chains the same phases with checkpoints between them; a per-phase skill
 > is one link of that chain, invoked on its own for incremental work. The wrappers differ only in
 > which agent they launch and which artifacts they resolve — this document is the part they share.
 
@@ -46,11 +46,25 @@ ${CLAUDE_PLUGIN_ROOT}/bin/validate-build-plan       build-plan.yaml       --cons
 (In feature mode run from inside `features/<slug>/` or prefix the paths.) **A failed validator is
 never presented as done** — re-invoke the agent with the error output, re-validate, then present.
 
+## Challenge (between validate and present)
+
+After the validator passes, run the adversarial challenge step per
+`${CLAUDE_PLUGIN_ROOT}/reference/challenge-standards.md`: launch the **spec-challenger** agent with
+the artifact + the same upstream inputs the architect had (never the architect's reasoning). It
+files `reviews/CHALLENGE_<PHASE>.md` (feature mode: `features/<slug>/reviews/`) and never edits the
+artifact. Same per-phase defaults as `/spec-kit:run`: **full loop** (route blockers/majors to the
+architect to revise or rebut, then one scope-locked pass 2) for the product spec and technical
+spec; **single pass** for the design spec and the plans; **skipped** on the light path or when the
+user opts out. If the artifact changed, re-run the validator before presenting. The report is
+presentation + audit trail only — never an input to downstream architects.
+
 ## Present, warn about staleness, stop
 
 - **Present** the artifact the way `/spec-kit:run`'s corresponding checkpoint does: the parts that
   need human judgment first (requirement list and non-goals; architecture + constraint envelope;
-  journeys; dependency order + tiers), with the validator result.
+  journeys; dependency order + tiers), with the validator result — and, when the challenge step
+  ran, the disposition report, leading with anything `open — contested` (the human's ruling to
+  make).
 - **Warn about downstream staleness.** If artifacts downstream of the one just (re)generated already
   exist (e.g. a `build-plan.yaml` downstream of a regenerated `TECHNICAL_SPEC.md`), list them and note
   they may now be stale and should be regenerated or re-validated. Upstream edits do not auto-ripple.
