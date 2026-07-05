@@ -108,6 +108,26 @@ config in `${CLAUDE_PROJECT_DIR}/.spec-kit/publisher.yaml`:
   (a `skp:<key>` label + a `<!-- skp-key: <key> -->` body marker), so re-publishing updates instead of
   duplicating. Default is skip-if-exists; `--update` overwrites managed fields; `--dry-run` previews.
 
+## Execution (companion plugin, not bundled)
+
+spec-kit deliberately ends at the plans — **planning and execution are two focused plugins**. Any
+executor that walks a dependency-ordered, test-first ticket list works; the first-class companion is
+**[`dev-orchestrator`](https://github.com/mkrueger/dev-orchestrator)** (autonomous ticket-driven
+development: milestone orchestrators, tiered model routing, scope → QA → review gates).
+
+The handshake is already aligned, via the tracker:
+
+1. `/spec-kit:run` (or any per-phase skill) produces validated `build-plan.yaml` /
+   `acceptance-plan.yaml`.
+2. `/spec-kit:publish-linear` (or `publish-jira`) turns them into issues — the `tier` field lands as
+   the exact labels dev-orchestrator routes on (`tier:simple|standard|complex`), and acceptance
+   criteria travel in the description.
+3. `/dev-orchestrator:orchestrate <milestone>` executes them. spec-kit tickets arrive **pre-groomed**
+   — interface, `tddCases`, real `modulesInScope`, checkable criteria, tier — so its readiness scan
+   passes without a grooming pass.
+
+No coupling in either direction: spec-kit never invokes it, and it consumes ordinary tracker tickets.
+
 ## Install
 
 ```

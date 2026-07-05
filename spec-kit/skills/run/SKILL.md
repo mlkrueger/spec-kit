@@ -166,7 +166,9 @@ Confirm the traceability spine is complete across the chain:
 Summarize the artifacts produced and point to the next steps:
 - **Execution:** an execution agent walks the build-plan tickets in dependency order (red → green →
   refactor), routing `simple`-tier tickets to a cheap model per the team's tier config. The feature is
-  done when the build tickets are green **and** the acceptance plan is green.
+  done when the build tickets are green **and** the acceptance plan is green. First-class companion
+  (separate plugin, if installed): publish the plans, then `/dev-orchestrator:orchestrate <milestone>` —
+  spec-kit's `tier` labels and criteria-bearing descriptions are exactly what it routes and gates on.
 - **CI:** if the repo has no pipeline (or an unaudited one), point at `/spec-kit:ci` — design the
   pipeline contract (`CI_SPEC.md`) so the build plan's `ci` tickets wire designed gates, or audit the
   existing pipeline against the done-gate this run just defined.

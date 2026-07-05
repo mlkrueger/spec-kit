@@ -53,12 +53,13 @@ Tracking loose ends for the `spec-kit` plugin (the `test-spec` plugin has been r
 - [ ] **Build-plan fan-out** — for very large technical specs, parallelize one sub-plan per component
   (the agent already documents the merge seam).
 - [ ] **More profiles** — add `rust`, `java`, `ruby`, … as needed; one file each.
-- [x] **Execution agent — decided: out of scope.** Execution lives in a separate, focused plugin
-  (planning and execution stay two plugins). The seam is already clean: the validated
-  `build-plan.yaml` + `acceptance-plan.yaml` are the contract the execution plugin consumes; the
-  hand-off language ("an execution agent walks the tickets red→green→refactor with tier routing")
-  stays plugin-agnostic on purpose. If useful later: name the execution plugin in the run skill's
-  hand-off so users know what to invoke next.
+- [x] **Execution agent — decided: out of scope; first-class companion is `dev-orchestrator`.**
+  Planning and execution stay two focused plugins, deliberately not bundled. The handshake is via
+  the tracker and is already aligned: publish the plans → `tier:<value>` labels + criteria-bearing
+  descriptions are exactly what `/dev-orchestrator:orchestrate` routes and gates on (spec-kit
+  tickets arrive pre-groomed for its readiness scan). Named in the README's Execution section, the
+  run skill's hand-off, and `publishing.md` (tier label format pinned verbatim); everything else
+  stays executor-agnostic — no coupling in either direction.
 - [ ] **`designRefs` ticket field** — optional build-plan field mirroring `constraintRefs` for design
   contracts (additive; design doc §6). Skipped for v1 — guide references live in ticket prose.
 - [ ] **Validator tests + repo CI** — `bin/validate-*` have no test suite and this repo has no

@@ -89,7 +89,9 @@ marker line always comes last.
 
 These neutral fields become labels (a publisher may prefix/translate per config):
 - `layer`, `stack`, and any free-form `labels`.
-- `tier` (build-plan) → a label like `tier:simple` so an execution orchestrator can query routable work.
+- `tier` (build-plan) → a label named exactly `tier:<value>` (`tier:simple` | `tier:standard` |
+  `tier:complex`) so an execution orchestrator can query routable work. This exact format is what the
+  companion `dev-orchestrator` plugin routes models on — keep it verbatim, don't prefix/translate it.
 - each `tracesTo` `PR-*` → a label like `pr:PR-checkout-guest`, so coverage is queryable in the tracker.
 
 `priority` maps via `config.priorityMap`; `estimate` maps to the tracker's points field (dropped where
