@@ -49,6 +49,8 @@ lookup, not a judgment call.
 | `bin/validate-build-plan` | Validates `build-plan.yaml`: schema + key uniqueness, referential integrity, acyclicity, real paths, **`constraintRefs` exist** in the envelope, **`tracesTo` exist** in the product spec. |
 | `bin/validate-acceptance-plan` | Validates `acceptance-plan.yaml`: schema + the four structural checks + **`tracesTo` exist** in the product spec. |
 | `skills/run/SKILL.md` | `/spec-kit:run` — drives the full four-agent chain with a human-approval checkpoint between every phase (incl. the principal-eng review before the build plan). |
+| `skills/survey/`, `skills/product-spec/`, `skills/technical-spec/`, `skills/acceptance-plan/`, `skills/build-plan/` | Per-phase skills: run any single phase as a one-off — resolve inputs, invoke the architect, validate, present, stop. Shared ceremony in `reference/single-phase.md`. |
+| `reference/single-phase.md` | The contract every per-phase skill obeys: input resolution, mode detection, validate-before-present, staleness warnings, present-and-stop. |
 | `skills/publish-linear/` + `skills/publish-jira/` | Publish a neutral `build-plan.yaml` / `acceptance-plan.yaml` to Linear or Jira, idempotently via key stamping. |
 | `reference/publishing.md` | The shared publishing contract both publishers obey: plan-kind detection, body rendering, idempotency, config. |
 | `reference/profiles/*.md` | Per-stack cards (`python`, `js-frontend`, `js-node`, `go`) — runner, single-test command, test-file naming infix, mocking seam, gotchas. Consumed by the build/acceptance agents. |
@@ -69,8 +71,12 @@ lookup, not a judgment call.
   behavior delta, `Modifies:` supersession links, and explicit test-migration tickets instead of a
   blanket "existing tests stay green." Small single-seam changes can take the **light path** (scoped
   survey → mini spec → build plan). See `reference/brownfield.md`.
-- **Incremental:** invoke a single architect agent directly (e.g. re-run `build-plan-architect` after a
-  tech-spec tweak). The plans validate independently, so you only redo what changed.
+- **Incremental:** run any phase as a one-off via its skill — `/spec-kit:survey`,
+  `/spec-kit:product-spec`, `/spec-kit:technical-spec`, `/spec-kit:acceptance-plan`,
+  `/spec-kit:build-plan`. Each resolves its upstream inputs (argument > `features/<slug>/` > cwd),
+  invokes the architect, validates, presents the same review its `/spec-kit:run` checkpoint would,
+  warns when downstream artifacts go stale, and stops. The plans validate independently, so you only
+  redo what changed.
 
 ## Publishing
 

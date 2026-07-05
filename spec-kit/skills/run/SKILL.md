@@ -161,6 +161,8 @@ Summarize the artifacts produced and point to the next steps:
 
 ## Single-phase / resume use
 
-This skill is the *full* run. For incremental work, the user can invoke any architect agent directly
-(e.g. just re-run `build-plan-architect` after a tech-spec tweak). When resuming mid-chain, start at the
-first missing/changed artifact and still honor every downstream checkpoint.
+This skill is the *full* run. For incremental work, each phase has its own skill —
+`/spec-kit:survey`, `/spec-kit:product-spec`, `/spec-kit:technical-spec`, `/spec-kit:acceptance-plan`,
+`/spec-kit:build-plan` — which resolves inputs, invokes the same architect agent, validates, presents,
+and stops (shared ceremony: `${CLAUDE_PLUGIN_ROOT}/reference/single-phase.md`). When resuming
+mid-chain, start at the first missing/changed artifact and still honor every downstream checkpoint.
