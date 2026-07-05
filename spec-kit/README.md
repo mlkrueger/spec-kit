@@ -2,8 +2,8 @@
 
 The **spec phase** of an AI SDLC / software factory, as one plugin. A chain of architect agents turns
 an idea into the artifacts a build agent can execute against — each agent owns one phase, hands off a
-machine-checkable artifact, and stops. Install once; invoke any agent on its own for incremental work,
-or do a **full run** for greenfield.
+machine-checkable artifact, and stops. Install once; run any phase as a one-off skill for incremental
+work, audit an existing repo's tests or pipeline, or do a **full run** — greenfield or brownfield.
 
 ## The chain
 
@@ -65,8 +65,9 @@ lookup, not a judgment call.
 | `bin/validate-constraints` | Validates `constraints.yaml` against the schema **and** non-schema rules (key uniqueness, escape-hatch rules, `tracesTo` existence against a required product spec). |
 | `bin/validate-build-plan` | Validates `build-plan.yaml`: schema + key uniqueness, referential integrity, acyclicity, real paths, **`constraintRefs` exist** in the envelope, **`tracesTo` exist** in the product spec. |
 | `bin/validate-acceptance-plan` | Validates `acceptance-plan.yaml`: schema + the four structural checks + **`tracesTo` exist** in the product spec. |
-| `skills/run/SKILL.md` | `/spec-kit:run` — drives the full four-agent chain with a human-approval checkpoint between every phase (incl. the principal-eng review before the build plan). |
-| `skills/survey/`, `skills/product-spec/`, `skills/technical-spec/`, `skills/acceptance-plan/`, `skills/build-plan/` | Per-phase skills: run any single phase as a one-off — resolve inputs, invoke the architect, validate, present, stop. Shared ceremony in `reference/single-phase.md`. |
+| `skills/run/SKILL.md` | `/spec-kit:run` — drives the full spec chain (incl. the parallel design track for UI features) with a human-approval checkpoint between every phase (incl. the principal-eng + design reviews before the build plan). |
+| `skills/survey/`, `skills/product-spec/`, `skills/technical-spec/`, `skills/design-spec/`, `skills/acceptance-plan/`, `skills/build-plan/`, `skills/test-audit/`, `skills/ci/` | Per-phase skills: run any single phase or audit as a one-off — resolve inputs, invoke the architect, validate, present, stop. Shared ceremony in `reference/single-phase.md`. |
+| `skills/status/` | `/spec-kit:status` — read-only report per artifact set: exists / validates / **stale against upstream** (mtime along the dependency order), plus the `PR-*` coverage snapshot. |
 | `reference/single-phase.md` | The contract every per-phase skill obeys: input resolution, mode detection, validate-before-present, staleness warnings, present-and-stop. |
 | `skills/publish-linear/` + `skills/publish-jira/` | Publish a neutral `build-plan.yaml` / `acceptance-plan.yaml` to Linear or Jira, idempotently via key stamping. |
 | `reference/publishing.md` | The shared publishing contract both publishers obey: plan-kind detection, body rendering, idempotency, config. |
@@ -89,8 +90,10 @@ lookup, not a judgment call.
   blanket "existing tests stay green." Small single-seam changes can take the **light path** (scoped
   survey → mini spec → build plan). See `reference/brownfield.md`.
 - **Incremental:** run any phase as a one-off via its skill — `/spec-kit:survey`,
-  `/spec-kit:product-spec`, `/spec-kit:technical-spec`, `/spec-kit:acceptance-plan`,
-  `/spec-kit:build-plan`. Each resolves its upstream inputs (argument > `features/<slug>/` > cwd),
+  `/spec-kit:product-spec`, `/spec-kit:technical-spec`, `/spec-kit:design-spec`,
+  `/spec-kit:acceptance-plan`, `/spec-kit:build-plan` — or the standing audits,
+  `/spec-kit:test-audit` and `/spec-kit:ci`. Each resolves its upstream inputs
+  (argument > `features/<slug>/` > cwd),
   invokes the architect, validates, presents the same review its `/spec-kit:run` checkpoint would,
   warns when downstream artifacts go stale, and stops. The plans validate independently, so you only
   redo what changed.
@@ -127,17 +130,24 @@ work use the build and acceptance plans.
 - **The artifact is the contract** between phases. Each agent produces a validatable artifact, then
   stops — it never does the next phase's job.
 - **Judgment lives in `reference/*-standards.md`** as standards-as-data; agent bodies point at them.
-- **Machine-checkable side-artifacts** (`constraints.yaml`, and the coming `build-plan.yaml` /
-  `acceptance-plan.yaml`) each get a `bin/validate-*` tool.
+- **Machine-checkable side-artifacts** (`constraints.yaml`, `build-plan.yaml`,
+  `acceptance-plan.yaml`, `design-tokens.yaml`) each get a `bin/validate-*` tool.
 - **Project-scoped agent memory**, committed to the repo, durable/non-obvious only.
 
 ## Usage
 
-1. Run `product-spec-architect` on your idea/brief/transcript → `PRODUCT_SPEC.md`.
-2. Run `technical-spec-architect` on the approved product spec → `TECHNICAL_SPEC.md` +
-   `constraints.yaml` (auto-validated).
-3. Validate constraints manually anytime (a product spec is required):
-   ```sh
-   ${CLAUDE_PLUGIN_ROOT}/bin/validate-constraints constraints.yaml            # resolves a sibling PRODUCT_SPEC.md
-   ${CLAUDE_PLUGIN_ROOT}/bin/validate-constraints constraints.yaml --product-spec path/to/PRODUCT_SPEC.md
-   ```
+- **Full chain:** `/spec-kit:run <brief>` — every phase, a checkpoint between each.
+- **One phase:** `/spec-kit:survey`, `/spec-kit:product-spec`, `/spec-kit:technical-spec`,
+  `/spec-kit:design-spec`, `/spec-kit:acceptance-plan`, `/spec-kit:build-plan`.
+- **Existing repos:** `/spec-kit:test-audit [unit|integration|e2e|all]` and
+  `/spec-kit:ci [design|audit]` — evidence-grounded audits whose remediations become ordinary,
+  publishable build plans.
+- **Orientation:** `/spec-kit:status` — what exists, what validates, what went stale.
+- **Validate manually anytime:**
+  ```sh
+  ${CLAUDE_PLUGIN_ROOT}/bin/validate-constraints      constraints.yaml       # product spec required
+  ${CLAUDE_PLUGIN_ROOT}/bin/validate-build-plan       build-plan.yaml
+  ${CLAUDE_PLUGIN_ROOT}/bin/validate-acceptance-plan  acceptance-plan.yaml
+  ${CLAUDE_PLUGIN_ROOT}/bin/validate-design-tokens    design-tokens.yaml
+  ```
+  Each resolves sibling inputs automatically or takes `--product-spec` / `--constraints` paths.

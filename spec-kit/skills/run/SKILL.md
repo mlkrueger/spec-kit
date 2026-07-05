@@ -5,7 +5,8 @@ description: "Drive the full spec-phase chain for a feature: product spec -> tec
 
 # Full spec-phase run
 
-Orchestrates the four `spec-kit` architect agents into one chain, with a **human-approval checkpoint
+Orchestrates the `spec-kit` architect agents (product, technical, design for UI features,
+acceptance, build) into one chain, with a **human-approval checkpoint
 between every phase**. Each phase produces a validated artifact that is the contract for the next; you
 review and approve before the chain proceeds. The skill never runs the whole chain unattended — the
 checkpoints are the point.
@@ -77,7 +78,7 @@ phase's agent with the feedback and re-validate before re-presenting. Never skip
    **inherited constraints**, and the integration points + regression surface — **split into
    must-stay-green vs. must-be-migrated when behavior is changing**.
 2. **⏸ Checkpoint.** Present the survey and have the user **correct your understanding of their repo**
-   — this is the cheapest place to fix a wrong assumption, before it propagates through four phases.
+   — this is the cheapest place to fix a wrong assumption, before it propagates through every phase.
    Confirm the feature slug, the survey tier, and (change mode) the regression-surface split. **Get
    approval before phase 1.** Pass the survey to every later phase.
 
