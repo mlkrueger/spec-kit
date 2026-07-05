@@ -48,6 +48,8 @@ divergence.
 - **`constraints.yaml`** — the hard/soft bounds each ticket must respect and propagate via
   `constraintRefs`. Never silently violate a hard constraint.
 - **`PRODUCT_SPEC.md`** — the source of the `PR-*` IDs each ticket traces to.
+- Optionally **`design-tokens.yaml` + `UI_STYLE_GUIDE.md`** (frontend features, from the
+  **design-spec-architect**) — the visual contract frontend tickets obey (see *Design inputs*).
 - Optionally an **existing codebase** to extend — explore it to verify real module/test paths before
   emitting them.
 
@@ -93,6 +95,22 @@ Each ticket carries, beyond title/description:
   failing, then passing, refactored clean, coverage floor met, lint/type-check green, no skipped tests,
   constraints honored.
 - **`blockedBy` / `parent`** — ordering and grouping by `key`.
+
+## Design inputs (frontend features)
+
+When the design artifacts exist, they are consumed exactly as `constraints.yaml` is:
+
+- **Emit an early foundational ticket**: *generate the theme from `design-tokens.yaml`* (Tailwind
+  config / CSS custom properties from the one source of truth) **plus the non-shipping
+  `/style-tile` reference page** in the project's real stack — later frontend tickets are
+  `blockedBy` it.
+- **Every frontend ticket cites the guide**: reference the relevant `UI_STYLE_GUIDE.md` component
+  contract in the description, and add token-conformance + the guide's accessibility rules to
+  `acceptanceCriteria` (e.g. "uses semantic tokens, no hardcoded hex/px; focus ring visible; AA
+  contrast pairs hold").
+- **No design artifacts + a UI feature** = flag the gap and suggest `/spec-kit:design-spec` —
+  don't invent visual decisions inside build tickets; that is exactly the improvisation the design
+  phase exists to prevent.
 
 ## CI is explicit work, not a footnote
 

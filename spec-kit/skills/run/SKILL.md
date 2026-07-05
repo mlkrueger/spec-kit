@@ -16,10 +16,13 @@ intake ─▶ [0] (feature mode only) repo survey ─▶ REPO_MAP.md
         ─▶ [1] product-spec-architect ─▶ PRODUCT_SPEC.md
                  ⏸ checkpoint: approve the product spec (and its PR-* IDs)
         ─▶ [2] technical-spec-architect ─▶ TECHNICAL_SPEC.md + constraints.yaml
-                 ⏸ checkpoint: PRINCIPAL/STAFF-ENG REVIEW — approve architecture + constraints
+            ├─ design-spec-architect  ─▶ STYLE_TILE.md, UI_STYLE_GUIDE.md,      (in parallel;
+            │                             design-tokens.yaml                     UI features only)
+                 ⏸ checkpoint: PRINCIPAL/STAFF-ENG REVIEW — architecture + constraints
+                 ⏸ + DESIGN REVIEW — tile first, then guide + tokens (UI features only)
         ─▶ [3] acceptance-spec-architect + build-plan-architect  (run in parallel)
                  ⏸ checkpoint: approve the acceptance plan + build plan
-        ─▶ hand-off: execution + publishing
+        ─▶ hand-off: execution + publishing (+ /spec-kit:ci when the pipeline needs work)
 ```
 
 ## Mode
@@ -91,28 +94,43 @@ phase's agent with the feedback and re-validate before re-presenting. Never skip
    the user-facing NFRs. Confirm the `PR-*` set is right; these IDs are the spine everything downstream
    traces to. **Get approval before phase 2.**
 
-### Phase 2 — Technical spec + constraints
-1. Launch the **technical-spec-architect** agent with `PRODUCT_SPEC.md` (and `REPO_MAP.md` + the
+### Phase 2 — Technical spec + constraints ∥ design spec (UI features only)
+1. Determine whether the feature **has a UI**: the product spec's UX-flows/states and personas make
+   this obvious; confirm with the user when ambiguous. No UX surface ⇒ skip the design track
+   entirely.
+2. Launch the **technical-spec-architect** agent with `PRODUCT_SPEC.md` (and `REPO_MAP.md` + the
    codebase in feature mode, so it inherits existing conventions as hard constraints and designs to
-   existing seams).
-2. It writes `TECHNICAL_SPEC.md` + `constraints.yaml` and self-validates. Independently confirm:
+   existing seams). **In parallel** (same message, two Agent calls) for UI features: the
+   **design-spec-architect** with `PRODUCT_SPEC.md` + any design references (brand guide, existing
+   design system, reference repo/sites — gather these at intake; their presence puts it in
+   reference-controlled mode, where the reference wins).
+3. They write `TECHNICAL_SPEC.md` + `constraints.yaml` (self-validated) and, for UI features,
+   `STYLE_TILE.md` + `UI_STYLE_GUIDE.md` + `design-tokens.yaml`. Independently confirm:
    ```sh
    ${CLAUDE_PLUGIN_ROOT}/bin/validate-constraints constraints.yaml --product-spec PRODUCT_SPEC.md
+   ${CLAUDE_PLUGIN_ROOT}/bin/validate-design-tokens design-tokens.yaml --product-spec PRODUCT_SPEC.md
    ```
-3. **⏸ Checkpoint — the principal/staff-eng review.** This is the load-bearing human gate. Present the
+4. **⏸ Checkpoint — the principal/staff-eng review.** This is the load-bearing human gate. Present the
    architecture, the hard/soft constraint envelope (owners + escape hatches), the ADR-lite decisions
    and their rejected alternatives, and the NFR→numeric translations. Surface anything risky. The
    constraint envelope is the only place platform/language/compliance is decided, so make sure it's
-   right — downstream agents treat it as given. **Get approval before phase 3.**
+   right — downstream agents treat it as given.
+5. **⏸ Checkpoint — the design review (UI features only).** Present the **tile first** for tone
+   sign-off (reference mode: "did we extract your brand correctly?"), then the guide + tokens with
+   the validator result, and any flagged **accessibility deviations** in the reference (the user
+   decides — never silently fixed, never silently shipped). A tone change loops at the tile before
+   the systematic work is redone. **Get approval on both tracks before phase 3.**
 
 ### Phase 3 — Acceptance plan + build plan (parallel)
 1. Launch **both** agents concurrently (two Agent tool calls in one message), since both consume the
    phase-2 outputs (pass `REPO_MAP.md` to both in feature mode):
    - **acceptance-spec-architect** with `PRODUCT_SPEC.md` → `ACCEPTANCE_SPEC.md` + `acceptance-plan.yaml`.
      In feature mode it reuses the existing E2E harness and names the regression-surface journeys.
-   - **build-plan-architect** with `TECHNICAL_SPEC.md` + `constraints.yaml` + `PRODUCT_SPEC.md` →
-     `BUILD_PLAN.md` + `build-plan.yaml`. In feature mode its `modulesInScope` reference real existing
-     files to edit, and the done-gate adds the regression clause.
+   - **build-plan-architect** with `TECHNICAL_SPEC.md` + `constraints.yaml` + `PRODUCT_SPEC.md` (+
+     `design-tokens.yaml` + `UI_STYLE_GUIDE.md` for UI features) → `BUILD_PLAN.md` + `build-plan.yaml`.
+     In feature mode its `modulesInScope` reference real existing files to edit, and the done-gate adds
+     the regression clause. For UI features it emits the theme-generation + `/style-tile` reference-page
+     ticket that frontend tickets are `blockedBy`.
 2. Each self-validates; independently confirm:
    ```sh
    ${CLAUDE_PLUGIN_ROOT}/bin/validate-acceptance-plan acceptance-plan.yaml --product-spec PRODUCT_SPEC.md
@@ -139,6 +157,9 @@ Confirm the traceability spine is complete across the chain:
 - **Change mode:** every `Modifies:` requirement has a behavior delta in the product spec, a
   migration/rollout decision in the technical spec, **test-migration tickets** in the build plan for
   the must-be-migrated set, and updated journeys replacing any superseded ones in the acceptance plan.
+- **UI features:** every UX state in `PRODUCT_SPEC.md` has a component in `UI_STYLE_GUIDE.md` to
+  render it; `validate-design-tokens` passes (AA pairs hold); the build plan emitted the
+  theme-generation/`/style-tile` ticket and its frontend tickets cite the guide's contracts.
 
 ### Hand-off
 Summarize the artifacts produced and point to the next steps:

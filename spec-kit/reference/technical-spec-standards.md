@@ -105,6 +105,15 @@ reasoned deferral. Silent omission is the failure mode:
   is the **ci-architect**'s job (`CI_SPEC.md`, per `ci-standards.md`) — don't inline workflow
   detail, and don't leave the gates unstated either.
 
+## The design boundary (frontend features)
+
+The technical spec owns the frontend *architecture* — component framework, state management,
+rendering strategy — recorded as constraints like everything else. It **defers all visual
+specifics** (palette, type, spacing, component look/states) to the design phase
+(`design-spec-architect` → `UI_STYLE_GUIDE.md` + `design-tokens.yaml`), the same membrane that
+keeps the product spec out of mechanism. A hex code in a technical spec is the same smell as a
+database table in a product spec.
+
 ## Requirements traceability (the spine)
 
 Maintain a **requirements-traceability matrix**: every `PR-*` from the product spec → where in this

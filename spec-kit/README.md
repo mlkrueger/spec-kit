@@ -13,16 +13,22 @@ idea / brief / transcript
         ▼
   product-spec-architect ──▶ PRODUCT_SPEC.md            (outside-in: what & why; defines PR-* IDs)
         │
-        ▼
-  technical-spec-architect ─▶ TECHNICAL_SPEC.md         (inside-out: how)
-        │                  └─▶ constraints.yaml          (hard/soft envelope, machine-readable)
-        │
-        ├─────────────────────────────────────────┬───────────────────────────────┐
+        ├───────────────────────────────────────────────────────────────┐
+        ▼                                                               ▼ (UI features only)
+  technical-spec-architect ─▶ TECHNICAL_SPEC.md         design-spec-architect ─▶ STYLE_TILE.md
+        │                  └─▶ constraints.yaml           (the visual language)   UI_STYLE_GUIDE.md
+        │                      (hard/soft envelope)                               design-tokens.yaml
+        │                                                               │
+        ├─────────────────────────────────────────┬─────────────────────┘
         ▼                                           ▼
   acceptance-spec-architect ──▶ ACCEPTANCE_SPEC.md  build-plan-architect ──▶ BUILD_PLAN.md
         + acceptance-plan.yaml                            + build-plan.yaml
-  (outer loop: E2E journeys, up-front)          (inner loop: test-first impl tickets, inline TDD)
+  (outer loop: E2E journeys, up-front)          (inner loop: test-first impl tickets, inline TDD;
+                                                 frontend tickets consume the design contract)
 ```
+
+Outside the chain, two standing agents work on what already exists: **test-audit-architect**
+(evaluate the real suites, plan the backfill) and **ci-architect** (design or audit the pipeline).
 
 Everything is linked by a **`PR-*` traceability spine** (`reference/traceability.md`): idea →
 requirement → design decision → ticket, so "is every requirement designed, built, and tested?" is a
@@ -36,6 +42,11 @@ lookup, not a judgment call.
 | `agents/technical-spec-architect.md` | Turns `PRODUCT_SPEC.md` into `TECHNICAL_SPEC.md` + a validated `constraints.yaml`. Core rule: *decide the load-bearing things; defer the rest.* |
 | `agents/build-plan-architect.md` | Decomposes `TECHNICAL_SPEC.md` (+ `constraints.yaml` + product spec) into a dependency-ordered, test-first `build-plan.yaml` + `BUILD_PLAN.md`. Core rule: *every ticket is independently buildable and test-first.* |
 | `agents/acceptance-spec-architect.md` | Turns the product spec's acceptance criteria into up-front E2E journeys (`acceptance-plan.yaml` + `ACCEPTANCE_SPEC.md`), the outer TDD loop. Core rule: *test the journey, not the click.* |
+| `agents/design-spec-architect.md` | Turns the product spec into the visual + interaction contract (UI features only): `STYLE_TILE.md` (tone, approved first) + `UI_STYLE_GUIDE.md` (the contract frontend tickets cite) + validated `design-tokens.yaml`. **Reference-controlled mode** when a brand guide / existing design system / reference repo or site exists: extraction with `source` provenance, the reference wins conflicts, AA violations flagged never silently fixed. Core rule: *specify the language, not the layout.* |
+| `reference/design-spec-standards.md` | The design brain: the two modes + reference precedence, extraction discipline, semantic-token model + required role floor, the checkable accessibility bar, the brand handoff, failure-mode catalog. |
+| `reference/design-tokens-schema.md` + `.schema.json` | The token contract (prose + JSON Schema): two tiers, `contrastsWith`/`minContrast`, `source` provenance, `tracesTo`. |
+| `bin/validate-design-tokens` | Validates `design-tokens.yaml`: schema + alias resolution, the required role floor, **computed WCAG contrast on declared pairs**, `tracesTo` existence, reference-mode provenance warnings. |
+| `skills/design-spec/` | `/spec-kit:design-spec` — one-off design phase with the tile-first checkpoint. |
 | `reference/product-spec-standards.md` | Outside-in discipline, banned-vocabulary filter, INVEST bar, the NFR handoff, failure-mode catalog. |
 | `reference/technical-spec-standards.md` | Hard/soft constraint taxonomy, ADR-lite, cross-cutting checklist, failure-mode catalog. |
 | `reference/testing-standards-shared.md` | Cross-layer testing discipline: ticket specificity, determinism, "a spec precedes the suite." Shared by both downstream test agents. |
@@ -61,7 +72,7 @@ lookup, not a judgment call.
 | `reference/publishing.md` | The shared publishing contract both publishers obey: plan-kind detection, body rendering, idempotency, config. |
 | `reference/profiles/*.md` | Per-stack cards (`python`, `js-frontend`, `js-node`, `go`) — runner, single-test command, test-file naming infix, mocking seam, gotchas. Consumed by the build/acceptance agents. |
 | `reference/brownfield.md` | Brownfield methodology: survey-before-specifying (tiered: scoped vs. full), existing reality as constraints, repo grounding, feature scoping, **change mode** (behavior deltas, `Modifies:` links, test migration), the regression gate, and the light path for small changes. Cited by all agents + `/spec-kit:run`. |
-| `reference/examples/` | A worked guest-checkout set sharing one `PR-*` spine: `REPO_MAP`, `PRODUCT_SPEC`, `TECHNICAL_SPEC`, `constraints`, `build-plan`, and `acceptance-plan` examples. |
+| `reference/examples/` | A worked guest-checkout set sharing one `PR-*` spine: `REPO_MAP`, `PRODUCT_SPEC`, `TECHNICAL_SPEC`, `constraints`, `build-plan`, `acceptance-plan`, `STYLE_TILE`, `UI_STYLE_GUIDE`, and `design-tokens` examples. |
 
 ## Full run vs. single agent
 

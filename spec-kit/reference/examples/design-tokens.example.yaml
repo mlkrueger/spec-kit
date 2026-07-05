@@ -1,0 +1,143 @@
+# Example design-token set for the guest-checkout example feature.
+# Produced by design-spec-architect alongside STYLE_TILE.example.md and
+# UI_STYLE_GUIDE.example.md; validated by bin/validate-design-tokens.
+# This set is in REFERENCE mode: extracted from the (fictional) Acme brand
+# guide + the storefront's existing Tailwind config, so semantic tokens carry
+# `source` provenance. Two tiers: primitives (raw scales) → semantic roles.
+version: 1
+spec: UI_STYLE_GUIDE.example.md
+mode: reference
+references:
+  - "acme-brand-guide.pdf"
+  - "storefront/tailwind.config.js"
+
+primitives:
+  color:
+    indigo-600: "#4f46e5"
+    indigo-700: "#4338ca"
+    slate-50: "#f8fafc"
+    slate-200: "#e2e8f0"
+    slate-500: "#64748b"
+    slate-900: "#0f172a"
+    red-600: "#dc2626"
+    green-700: "#15803d"
+    amber-600: "#d97706"
+  space:
+    "1": "4px"
+    "2": "8px"
+    "3": "12px"
+    "4": "16px"
+    "6": "24px"
+    "8": "32px"
+  font-size:
+    sm: "14px"
+    base: "16px"
+    lg: "18px"
+    xl: "20px"
+    2xl: "24px"
+  radius:
+    sm: "4px"
+    md: "8px"
+  duration:
+    fast: "120ms"
+    base: "200ms"
+
+tokens:
+  # ── Required role floor ─────────────────────────────────────────────
+  - key: color-primary
+    category: color
+    value: "{primitives.color.indigo-600}"
+    description: "Primary action / brand accent (Place order, Continue)."
+    source: "acme-brand-guide §2.1 (Acme Indigo)"
+    tracesTo: [PR-checkout-guest]
+  - key: color-surface
+    category: color
+    value: "{primitives.color.slate-50}"
+    description: "Default page and card background."
+    source: "storefront/tailwind.config.js:18"
+  - key: text-default
+    category: color
+    value: "{primitives.color.slate-900}"
+    description: "Body text on surface."
+    source: "acme-brand-guide §2.3"
+    contrastsWith: color-surface
+    minContrast: 4.5
+  - key: text-muted
+    category: color
+    value: "{primitives.color.slate-500}"
+    description: "Secondary text: helper copy, captions, empty states."
+    source: "storefront/tailwind.config.js:22"
+    contrastsWith: color-surface
+    minContrast: 4.5
+  - key: color-border
+    category: color
+    value: "{primitives.color.slate-200}"
+    description: "Hairline borders on inputs, cards, dividers."
+    source: "storefront/tailwind.config.js:24"
+  - key: color-danger
+    category: color
+    value: "{primitives.color.red-600}"
+    description: "Errors: declined payment, invalid input, destructive actions."
+    source: "acme-brand-guide §2.4"
+    contrastsWith: color-surface
+    minContrast: 4.5
+    tracesTo: [PR-checkout-guest]
+  - key: color-success
+    category: color
+    value: "{primitives.color.green-700}"
+    description: "Success: order confirmed, payment accepted."
+    source: "acme-brand-guide §2.4"
+    contrastsWith: color-surface
+    minContrast: 4.5
+    tracesTo: [PR-guest-confirmation]
+
+  # ── Beyond the floor ───────────────────────────────────────────────
+  - key: color-primary-hover
+    category: color
+    value: "{primitives.color.indigo-700}"
+    description: "Primary action hover/active state."
+    source: "derived: brand indigo, one step darker (guide has no hover spec)"
+  - key: color-warning
+    category: color
+    value: "{primitives.color.amber-600}"
+    description: "Warnings: low stock, session about to expire."
+    source: "invented: no reference; kept in the brand's warm register"
+
+  # ── Typography ─────────────────────────────────────────────────────
+  - key: text-body-size
+    category: typography
+    value: "{primitives.font-size.base}"
+    description: "Body copy size; forms and running text."
+    source: "acme-brand-guide §3.1"
+  - key: text-heading-size
+    category: typography
+    value: "{primitives.font-size.2xl}"
+    description: "Page/section heading size (one heading level per view)."
+    source: "acme-brand-guide §3.1"
+
+  # ── Space, radius, motion ──────────────────────────────────────────
+  - key: space-stack
+    category: space
+    value: "{primitives.space.4}"
+    description: "Default vertical rhythm between stacked blocks."
+    source: "storefront/tailwind.config.js:30"
+  - key: space-inline
+    category: space
+    value: "{primitives.space.2}"
+    description: "Default inline gap: icon-to-label, chip gaps."
+    source: "storefront/tailwind.config.js:30"
+  - key: radius-control
+    category: radius
+    value: "{primitives.radius.sm}"
+    description: "Buttons, inputs, chips."
+    source: "acme-brand-guide §4 (soft-rectangle controls)"
+  - key: radius-card
+    category: radius
+    value: "{primitives.radius.md}"
+    description: "Cards and dialogs."
+    source: "derived: control radius × 2, matching existing cards"
+  - key: motion-interaction
+    category: motion
+    value: "{primitives.duration.fast}"
+    description: "Hover/focus transitions; respects prefers-reduced-motion."
+    source: "invented: no reference; kept under 150ms per standards"

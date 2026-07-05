@@ -1,0 +1,252 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["jsonschema>=4.20", "pyyaml>=6"]
+# ///
+"""Validate a design-token set.
+
+Checks the JSON Schema (design-tokens.schema.json) plus the constraints the schema
+cannot express: key uniqueness, every '{primitives.<cat>.<name>}' alias resolves to
+a declared primitive, the required semantic role floor is present, every
+contrastsWith pair meets its minContrast (the WCAG ratio is COMPUTED from the
+resolved hex — the accessibility floor is mechanically enforced, not aspirational),
+and every tracesTo entry references a PR-* that exists in the product spec.
+
+A product spec is required iff any token uses tracesTo (a token set serving no
+specific requirement — the core role floor — validates without one). In
+mode: reference, semantic tokens missing `source` provenance are reported as
+warnings, not failures.
+
+Usage:
+    validate-design-tokens TOKENS.yaml [--schema PATH] [--product-spec PATH]
+
+Exit codes: 0 = valid, 1 = invalid, 2 = usage/IO error.
+The schema defaults to ../reference/design-tokens.schema.json relative to this script.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+import yaml
+from jsonschema import Draft202012Validator
+
+HERE = Path(__file__).resolve().parent
+DEFAULT_SCHEMA = HERE.parent / "reference" / "design-tokens.schema.json"
+
+PR_ID = re.compile(r"\bPR-[a-z0-9]+(?:-[a-z0-9]+)*\b")
+ALIAS = re.compile(r"^\{primitives\.([a-z0-9-]+)\.([a-zA-Z0-9-]+)\}$")
+HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+# The semantic color roles a usable UI cannot lack (design-spec-standards.md).
+REQUIRED_ROLES = (
+    "color-primary",
+    "color-surface",
+    "text-default",
+    "text-muted",
+    "color-border",
+    "color-danger",
+    "color-success",
+)
+
+
+def fail(errors: list[str]) -> None:
+    print("invalid:", file=sys.stderr)
+    for e in errors:
+        print(f"  - {e}", file=sys.stderr)
+    sys.exit(1)
+
+
+def usage_error(msg: str) -> None:
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def resolve_value(token: dict, primitives: dict) -> tuple[str | int | float | None, str | None]:
+    """Resolve a token's value through a primitive alias if present.
+
+    Returns (resolved_value, error). A non-alias value resolves to itself.
+    """
+    value = token.get("value")
+    if not isinstance(value, str):
+        return value, None
+    m = ALIAS.match(value)
+    if not m:
+        return value, None
+    category, name = m.group(1), m.group(2)
+    resolved = primitives.get(category, {}).get(name)
+    if resolved is None:
+        return None, f"alias {value!r} does not resolve to a declared primitive"
+    return resolved, None
+
+
+def relative_luminance(hex_color: str) -> float:
+    """WCAG 2.x relative luminance of an sRGB hex color."""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    channels = []
+    for i in (0, 2, 4):
+        c = int(h[i : i + 2], 16) / 255.0
+        channels.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    r, g, b = channels
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(hex_a: str, hex_b: str) -> float:
+    la, lb = relative_luminance(hex_a), relative_luminance(hex_b)
+    lighter, darker = max(la, lb), min(la, lb)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def check_tokens(doc: dict, product_spec_ids: set[str] | None) -> tuple[list[str], list[str]]:
+    """The checks JSON Schema can't (cleanly) express. Returns (errors, warnings)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    tokens = doc.get("tokens", []) or []
+    primitives = doc.get("primitives", {}) or {}
+
+    # Key uniqueness.
+    keys = [t.get("key") for t in tokens if isinstance(t, dict)]
+    seen, dupes = set(), set()
+    for k in keys:
+        (dupes.add(k) if k in seen else seen.add(k))
+    for k in sorted(dupes):
+        errors.append(f"duplicate token key: {k!r}")
+
+    # Required role floor.
+    for role in REQUIRED_ROLES:
+        if role not in seen:
+            errors.append(f"required semantic role missing: {role!r}")
+
+    by_key = {t.get("key"): t for t in tokens if isinstance(t, dict)}
+    resolved: dict[str, object] = {}
+
+    for t in tokens:
+        if not isinstance(t, dict):
+            continue
+        k = t.get("key")
+        value, err = resolve_value(t, primitives)
+        if err:
+            errors.append(f"{k!r}: {err}")
+        else:
+            resolved[k] = value
+
+        # Traceability: shape is schema-checked; existence is checked against the product spec.
+        for ref in t.get("tracesTo", []) or []:
+            if product_spec_ids is not None and ref not in product_spec_ids:
+                errors.append(f"{k!r}: tracesTo {ref!r} not found in the product spec")
+
+        # Provenance in reference mode: expected, reported as a warning when absent.
+        if doc.get("mode") == "reference" and not t.get("source"):
+            warnings.append(f"{k!r}: reference mode but no `source` provenance")
+
+    # Contrast pairs: existence, computable hex on both sides, computed ratio meets the floor.
+    for t in tokens:
+        if not isinstance(t, dict) or not t.get("contrastsWith"):
+            continue
+        k, other_key = t.get("key"), t.get("contrastsWith")
+        min_contrast = t.get("minContrast", 4.5)
+        if other_key not in by_key:
+            errors.append(f"{k!r}: contrastsWith {other_key!r} is not a declared token")
+            continue
+        a, b = resolved.get(k), resolved.get(other_key)
+        bad = [
+            (side, v)
+            for side, v in ((k, a), (other_key, b))
+            if not (isinstance(v, str) and HEX_COLOR.match(v))
+        ]
+        if bad:
+            for side, v in bad:
+                errors.append(
+                    f"{k!r}: contrast pair side {side!r} does not resolve to hex "
+                    f"(got {v!r}); contrast is only computable from #rgb/#rrggbb"
+                )
+            continue
+        ratio = contrast_ratio(a, b)
+        if ratio < min_contrast:
+            errors.append(
+                f"{k!r}: contrast vs {other_key!r} is {ratio:.2f}:1, "
+                f"below the required {min_contrast}:1"
+            )
+
+    return errors, warnings
+
+
+def load_product_spec_ids(path: Path | None, tokens_path: Path, needed: bool) -> set[str] | None:
+    """Collect PR-* ids from the product spec, requiring it iff any tracesTo are used."""
+    if not needed:
+        return None
+    spec_path = path
+    if spec_path is None:
+        candidate = tokens_path.parent / "PRODUCT_SPEC.md"
+        if candidate.exists():
+            spec_path = candidate
+    if spec_path is None:
+        usage_error(
+            "this token set uses tracesTo but no product spec was found. "
+            "Pass --product-spec PATH, or place a PRODUCT_SPEC.md beside the tokens file."
+        )
+    try:
+        text = spec_path.read_text()
+    except OSError as e:
+        usage_error(f"reading product spec {str(spec_path)!r}: {e}")
+    return set(PR_ID.findall(text))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Validate a design-token set.")
+    ap.add_argument("tokens", help="path to design-tokens.yaml (or .json)")
+    ap.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="path to the JSON Schema")
+    ap.add_argument(
+        "--product-spec",
+        default=None,
+        help="path to PRODUCT_SPEC.md (required iff any token uses tracesTo; "
+        "a sibling PRODUCT_SPEC.md is used if present)",
+    )
+    args = ap.parse_args()
+
+    tokens_path = Path(args.tokens)
+    try:
+        schema = json.loads(Path(args.schema).read_text())
+        doc = yaml.safe_load(tokens_path.read_text())
+    except (OSError, json.JSONDecodeError, yaml.YAMLError) as e:
+        usage_error(f"reading inputs: {e}")
+
+    if not isinstance(doc, dict):
+        fail(["tokens file is not a mapping/object"])
+
+    schema_errors = sorted(
+        Draft202012Validator(schema).iter_errors(doc),
+        key=lambda e: list(e.path),
+    )
+    errors = [f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in schema_errors]
+    warnings: list[str] = []
+
+    # Structural checks only make sense once the shape is roughly right.
+    if not errors:
+        tokens = doc.get("tokens", []) or []
+        needs_pr = any(t.get("tracesTo") for t in tokens if isinstance(t, dict))
+        product_spec_ids = load_product_spec_ids(
+            Path(args.product_spec) if args.product_spec else None, tokens_path, needs_pr
+        )
+        errors_2, warnings = check_tokens(doc, product_spec_ids)
+        errors += errors_2
+
+    if errors:
+        fail(errors)
+    for w in warnings:
+        print(f"warning: {w}", file=sys.stderr)
+    print(
+        f"ok -- {args.tokens} is a valid design-token set "
+        f"({len(doc.get('tokens', []))} tokens"
+        + (f", {len(warnings)} warning(s)" if warnings else "")
+        + ")"
+    )
+
+
+if __name__ == "__main__":
+    main()

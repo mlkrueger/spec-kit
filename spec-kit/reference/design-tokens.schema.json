@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mkrueger/agent-specs/spec-kit/reference/design-tokens.schema.json",
+  "title": "Design-token set",
+  "description": "The machine-readable design-token artifact produced by the design-spec-architect agent alongside STYLE_TILE.md and UI_STYLE_GUIDE.md. Two tiers: primitives (raw scales, no meaning) and semantic tokens (roles a component references, each aliasing a primitive or literal). Downstream frontend build tickets generate the theme (Tailwind config / CSS custom properties) from this file and lint built UI against it. DTCG-adjacent, deliberately lighter. The guide's token section is the human mirror of this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "spec", "tokens"],
+  "properties": {
+    "version": {
+      "description": "Schema version of this file. Bump only on breaking schema changes.",
+      "const": 1
+    },
+    "spec": {
+      "description": "Filename of the companion style guide (e.g. UI_STYLE_GUIDE.md).",
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "description": "Where this token set's authority comes from: 'invention' (derived from the product spec's brand intent) or 'reference' (extracted from a controlling reference — brand guide, existing design system, reference repo/site; see design-spec-standards.md). In reference mode, semantic tokens are expected to carry `source` provenance.",
+      "type": "string",
+      "enum": ["invention", "reference"]
+    },
+    "references": {
+      "description": "In reference mode: the controlling sources in precedence order (e.g. 'brand-guide.pdf', 'acme-web/tailwind.config.js', 'https://stripe.com').",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "primitives": {
+      "description": "Tier 1: the raw scales, no meaning attached. A mapping of category (e.g. color, space, font-size) to a mapping of primitive name to literal value.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": { "type": ["string", "number"] }
+      }
+    },
+    "tokens": {
+      "description": "Tier 2: the flat list of semantic tokens — the roles components reference. Components reference these only, never primitives or raw values.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/token" }
+    }
+  },
+  "$defs": {
+    "token": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "category", "value", "description"],
+      "properties": {
+        "key": {
+          "description": "Stable, unique, kebab-case identifier for the semantic role (e.g. color-primary, text-muted, radius-card). This is the identity components and theme generators reference.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "category": {
+          "description": "The token's kind, which routes it in theme generation.",
+          "type": "string",
+          "enum": ["color", "typography", "space", "radius", "border", "shadow", "motion", "z-index", "breakpoint"]
+        },
+        "value": {
+          "description": "Either a primitive alias of the form '{primitives.<category>.<name>}' (preferred — the validator checks it resolves) or a literal value. Color literals/resolutions must be hex (#rgb/#rrggbb) so contrast is computable.",
+          "type": ["string", "number"],
+          "minLength": 1
+        },
+        "description": {
+          "description": "The role in one line: where this token is used and what it means (e.g. 'Primary action / brand accent.').",
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "description": "Provenance (reference mode): where this value was extracted from ('brand-guide §3.2', 'acme-web/tailwind.config.js:14') or how a gap was filled ('derived: brand ratio', 'invented: no reference'). Expected on every semantic token in reference mode.",
+          "type": "string",
+          "minLength": 1
+        },
+        "contrastsWith": {
+          "description": "For color tokens: the key of the token this one must remain legible against (e.g. text-default contrastsWith color-surface). Declares a load-bearing pair; the validator computes the real WCAG ratio from resolved hex.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "minContrast": {
+          "description": "The WCAG contrast ratio the contrastsWith pair must meet. Defaults to 4.5 (AA normal text) when contrastsWith is present; use 3 for large text / essential UI boundaries.",
+          "type": "number",
+          "exclusiveMinimum": 1,
+          "maximum": 21
+        },
+        "tracesTo": {
+          "description": "Optional PR-* product-requirement IDs this token serves (the traceability spine). Each must look like a PR-* id; the validator checks existence when any tracesTo is used.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^PR-[a-z0-9]+(-[a-z0-9]+)*$" },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "description": "minContrast only makes sense on a declared pair.",
+          "if": {
+            "required": ["minContrast"]
+          },
+          "then": {
+            "required": ["contrastsWith"]
+          }
+        }
+      ]
+    }
+  }
+}
