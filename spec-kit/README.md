@@ -52,7 +52,7 @@ lookup, not a judgment call.
 | `skills/publish-linear/` + `skills/publish-jira/` | Publish a neutral `build-plan.yaml` / `acceptance-plan.yaml` to Linear or Jira, idempotently via key stamping. |
 | `reference/publishing.md` | The shared publishing contract both publishers obey: plan-kind detection, body rendering, idempotency, config. |
 | `reference/profiles/*.md` | Per-stack cards (`python`, `js-frontend`, `js-node`, `go`) — runner, single-test command, test-file naming infix, mocking seam, gotchas. Consumed by the build/acceptance agents. |
-| `reference/brownfield.md` | Feature-addition methodology: survey-before-specifying, existing reality as constraints, feature scoping, the regression gate. Cited by all agents + `/spec-kit:run`. |
+| `reference/brownfield.md` | Brownfield methodology: survey-before-specifying (tiered: scoped vs. full), existing reality as constraints, repo grounding, feature scoping, **change mode** (behavior deltas, `Modifies:` links, test migration), the regression gate, and the light path for small changes. Cited by all agents + `/spec-kit:run`. |
 | `reference/examples/` | A worked guest-checkout set sharing one `PR-*` spine: `REPO_MAP`, `PRODUCT_SPEC`, `TECHNICAL_SPEC`, `constraints`, `build-plan`, and `acceptance-plan` examples. |
 
 ## Full run vs. single agent
@@ -60,12 +60,15 @@ lookup, not a judgment call.
 - **Greenfield:** `/spec-kit:run <brief>` drives the whole chain with an approval checkpoint between
   every phase. You review and approve each artifact before the next phase consumes it; the principal-eng
   review lands between the technical spec and the build plan.
-- **Feature-addition (brownfield):** `/spec-kit:run` on a populated repo first runs a **Phase-0 survey**
-  → `REPO_MAP.md` (stack, seams, existing test harness, conventions, existing ID namespace, inherited
-  constraints, regression surface), which you review before it propagates. Then the chain runs in
-  *feature mode*: artifacts under `features/<slug>/`, feature-prefixed IDs (`PR-<slug>-<req>`), existing
-  conventions inherited as hard constraints, the existing E2E harness reused, and a **regression clause**
-  on the done-gate so the pre-existing suite stays green. See `reference/brownfield.md`.
+- **Brownfield:** `/spec-kit:run` on a populated repo first runs a **Phase-0 survey** — scoped to the
+  feature by default, full-repo when it's the first run or the blast radius is wide — which you review
+  before it propagates. Then the chain runs in *feature mode*: artifacts under `features/<slug>/`,
+  feature-prefixed IDs (`PR-<slug>-<req>`), existing conventions inherited as hard constraints, the
+  existing E2E harness reused, and a **regression clause** on the done-gate so the pre-existing suite
+  stays green. Requirements that *modify* existing behavior get **change mode**: a before/after
+  behavior delta, `Modifies:` supersession links, and explicit test-migration tickets instead of a
+  blanket "existing tests stay green." Small single-seam changes can take the **light path** (scoped
+  survey → mini spec → build plan). See `reference/brownfield.md`.
 - **Incremental:** invoke a single architect agent directly (e.g. re-run `build-plan-architect` after a
   tech-spec tweak). The plans validate independently, so you only redo what changed.
 

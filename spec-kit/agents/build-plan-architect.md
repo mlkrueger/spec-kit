@@ -99,19 +99,30 @@ Each ticket carries, beyond title/description:
 Every build plan **must** include one `ci`-layer ticket wiring the **feature done-gate**: the inner
 suite (this plan's unit/integration tests) **and** the outer `acceptance-plan` E2E job must both be
 green before merge. This asserts the two TDD loops together. It `blockedBy` the feature tickets it
-gates. **In brownfield (feature-addition), the gate adds a third clause: the pre-existing test suite
-(existing unit/integration + existing E2E journeys) must still be green** — no regression introduced.
+gates. **In brownfield, the gate adds a third clause: the must-stay-green set (pre-existing tests +
+existing E2E journeys outside the change) still green unchanged** — no regression introduced. **In
+change mode, a fourth: the must-be-migrated set fully migrated** — every test that asserted the old
+behavior now asserts the new one or is explicitly retired; none skipped, none silently deleted.
 
 ## Extending an existing repository (brownfield)
 
-When the work is *adding a feature* to a pre-existing repo, read and apply
+When the work targets a pre-existing repo, read and apply
 `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`, and read `REPO_MAP.md` if present. `modulesInScope` must
-reference **real existing files to edit** as well as new files — the survey makes these verifiable, so
-never guess a path. Decompose to the **existing module seams**, not invented ones. On every
-integration-touching ticket, add an acceptance criterion that **existing tests covering that area still
-pass**, and propagate the inherited constraints from `constraints.yaml` via `constraintRefs`. Write
-artifacts under `features/<feature-slug>/` with feature-prefixed `PR-*`/keys, and ensure the done-gate
-includes the regression clause above.
+reference **real existing files to edit** as well as new files — **verify every path with Glob/Read in
+this run, even when the survey names it** (brownfield principle 5); never emit a path you haven't seen.
+Decompose to the **existing module seams**, not invented ones. On every integration-touching ticket, add
+an acceptance criterion that **existing tests covering that area still pass**, and propagate the
+inherited constraints from `constraints.yaml` via `constraintRefs`. Write artifacts under
+`features/<feature-slug>/` with feature-prefixed `PR-*`/keys, and ensure the done-gate includes the
+regression clause above.
+
+**Change mode.** When the product spec carries `Modifies:` requirements, emit explicit
+**test-migration tickets** for the must-be-migrated set (the existing tests asserting the old
+behavior, named in the survey/acceptance spec): each updates the assertion to the new behavior — or
+explicitly retires the test with the requirement it covered — traced to the new `PR-*` and
+`blockedBy` the behavior-changing ticket it follows. Never bulk-edit old tests to pass, never
+silently delete them. On behavior-changing tickets, add the criterion "tests formerly asserting
+<old behavior> are migrated per the delta."
 
 ## Output
 

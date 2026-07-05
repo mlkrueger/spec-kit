@@ -72,6 +72,30 @@ Every requirement carries a stable `PR-*` ID (see the traceability convention). 
 spine the entire downstream chain hangs on — the technical spec traces each design decision to them,
 and the build and acceptance plans trace each ticket to them.
 
+## Specifying a change to existing behavior (brownfield change mode)
+
+When a requirement **modifies** behavior the system already has (see `brownfield.md`), the observable-
+behavior discipline gains a second column: the spec must show the **behavior delta** — current
+behavior and new behavior, side by side — for every changed requirement:
+
+> **PR-checkout-guest-express** *(Modifies: PR-checkout-guest)*
+> **Today:** a guest completing checkout must re-enter payment details on every order.
+> **After:** a guest who opts in during checkout can complete a later order with one confirmation
+> step, using the details they saved.
+
+Rules:
+
+- **Describing current behavior is observation, not solutioning.** State what the system observably
+  does today — the banned-vocabulary filter applies to the *new* behavior the same as ever, and to
+  the "today" column too (describe what users see, not the machinery behind it).
+- **`Modifies:` names what is superseded** — the existing `PR-*` if the behavior was specced before,
+  otherwise the delta row itself documents the previously un-specced behavior. Superseded `PR-*` IDs
+  are retired, never edited (see `traceability.md`); mint the successor normally.
+- **A change spec without the "today" column is an addition spec in disguise.** Reviewers can't
+  assess a change they can't see — what users will lose or notice is exactly what needs sign-off.
+- **Non-goals name the preserved behavior.** Adjacent existing behavior the change must *not* touch
+  is an explicit non-goal — it defines the must-stay-green regression surface downstream.
+
 ## Acceptance criteria: Given/When/Then, tracker-neutral, falsifiable
 
 For each requirement (or cluster), write acceptance criteria in **Given/When/Then** form. They must
@@ -129,6 +153,8 @@ Before finishing, audit the document for each of these recurring failure modes a
   error, and the meaningful edge states *described* (not designed).
 - **NFRs with numbers** — a latency/uptime/throughput threshold in the product spec. Move the number
   to the technical spec; keep the user-facing phrasing here.
+- **A change with no "today"** — a requirement that modifies existing behavior but shows only the new
+  behavior. Add the behavior delta and the `Modifies:` link (see the change-mode section).
 
 ## Output discipline
 

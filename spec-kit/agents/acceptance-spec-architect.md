@@ -67,13 +67,20 @@ divergence.
 
 ## Extending an existing repository (brownfield)
 
-When the work is *adding a feature* to a pre-existing repo, read and apply
+When the work targets a pre-existing repo, read and apply
 `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`, and read `REPO_MAP.md` if present. **Reuse the existing
 E2E harness** named in the survey — your `harness`-ticket `modulesInScope` reference the real existing
-rig and fixtures, not new ones (add only what the feature genuinely needs). Add the new feature's
-journeys, and in `ACCEPTANCE_SPEC.md` name the **existing journeys that form the regression surface** for
-the area you touch — they must stay green. Write artifacts under `features/<feature-slug>/` with
-feature-prefixed keys.
+rig and fixtures, not new ones (add only what the feature genuinely needs). **Verify the harness and
+spec paths in the repo before emitting them** (brownfield principle 5) — open the real rig, don't trust
+the map. Add the new feature's journeys, and in `ACCEPTANCE_SPEC.md` name the **existing journeys that
+form the regression surface** for the area you touch — split per the change-mode rule:
+
+- **must-stay-green** — existing journeys outside the change; they pass unchanged.
+- **superseded** *(change mode)* — existing journeys asserting behavior a `Modifies:` requirement
+  replaces. Name each, and provide the updated journey tracing to the new `PR-*`; never leave a
+  journey silently asserting retired behavior.
+
+Write artifacts under `features/<feature-slug>/` with feature-prefixed keys.
 
 ## Output
 

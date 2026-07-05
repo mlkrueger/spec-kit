@@ -48,6 +48,24 @@ convention, not new machinery. Ticket and milestone `key`s are prefixed the same
 (`<feature>-<ticket>`), which keeps the tracker stamps derived from them collision-free too. Before
 minting any ID/key, check it against the existing namespace recorded in `REPO_MAP.md`.
 
+### `Modifies:` — supersession links (brownfield change mode)
+
+A requirement that **changes existing behavior** (see `brownfield.md`, change mode) carries a
+`Modifies:` annotation naming what it supersedes:
+
+```
+PR-guest-checkout-express   (Modifies: PR-checkout-guest)
+```
+
+- If the old behavior was specced, `Modifies:` names its `PR-*`; the superseded ID is **retired**
+  per the split rule above (retire + mint, note the supersession in the old spec), never silently
+  repurposed.
+- If the old behavior predates any spec, the new requirement's behavior delta documents it — the
+  delta row is the anchor in place of an ID.
+- `Modifies:` is prose convention on the product spec, not a schema field — downstream plans still
+  trace to the *new* `PR-*` via `tracesTo` unchanged. Its downstream effect is on the regression
+  surface: tests/journeys asserting a superseded behavior are must-be-migrated, not must-stay-green.
+
 ## How each phase references the spine
 
 | Phase | Artifact | How it uses `PR-*` |

@@ -59,12 +59,23 @@ spine the entire downstream chain depends on. Treat both as authoritative.
 
 ## Extending an existing repository (brownfield)
 
-When the work is *adding a feature* to a pre-existing repo rather than greenfield, read and apply
-`${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`. If a `REPO_MAP.md` survey exists, read it first: define
-the new feature's scope *relative to what already exists*, make non-goals call out existing behavior the
-feature must **not** change, and write artifacts under `features/<feature-slug>/`. **Prefix every `PR-*`
-with the feature slug** (`PR-<feature>-<req>`) and check each against the existing ID namespace in
-`REPO_MAP.md` so requirements never collide across features.
+When the work targets a pre-existing repo rather than greenfield, read and apply
+`${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`. If a `REPO_MAP.md` survey exists (root or feature-
+scoped), read it first: define the new feature's scope *relative to what already exists*, make
+non-goals call out existing behavior the feature must **not** change, and write artifacts under
+`features/<feature-slug>/`. **Prefix every `PR-*` with the feature slug** (`PR-<feature>-<req>`) and
+check each against the existing ID namespace so requirements never collide across features.
+
+- **Ground claims in the repo, not just the survey.** Before asserting what the system does today,
+  verify it — read the relevant flows/tests rather than trusting the map (brownfield principle 5).
+- **Change mode.** When a requirement *modifies* existing behavior, write the **behavior delta**
+  (current behavior and new behavior, side by side) and a **`Modifies:`** link to the superseded
+  `PR-*` or delta row, per the change-mode section of the product-spec standards. A change spec
+  without the "today" column is an addition spec in disguise. Non-goals name the preserved behavior —
+  that becomes the must-stay-green regression surface downstream.
+- **Light path.** For a small, single-seam change, a **mini product spec** is legitimate: problem,
+  one to three `PR-*` requirements (with delta + `Modifies:` if changing behavior), acceptance
+  criteria — no personas/metrics ceremony. Keep the IDs; they are what downstream plans trace to.
 
 ## Output: the product specification
 

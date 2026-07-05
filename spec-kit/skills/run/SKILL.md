@@ -28,13 +28,21 @@ Determine the mode at the start; it shapes the whole run:
 
 - **greenfield** — empty/new repo. Skip Phase 0. Artifacts go where the user wants (repo root by
   default). IDs are plain `PR-<req>`.
-- **feature** (brownfield) — adding a feature to a pre-existing repo. **Run Phase 0 first**, apply
+- **feature** (brownfield) — working in a pre-existing repo. **Run Phase 0 first**, apply
   `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md` throughout, write artifacts under
   `features/<feature-slug>/`, and use feature-prefixed IDs (`PR-<feature>-<req>`). Pick this mode when
   the working directory already contains a real codebase, or the user says "add … to the repo."
+  Within feature mode, note per-requirement whether the work **adds** behavior or **changes** existing
+  behavior — changed requirements get brownfield's *change mode* (behavior delta, `Modifies:` links,
+  the regression-surface split, test-migration tickets) threaded through every phase below.
 
 If unsure which mode, look: a populated repo with source + tests ⇒ feature; an empty/scaffold-only dir
 ⇒ greenfield. Confirm with the user when ambiguous.
+
+**Light path.** For a bugfix-sized, single-seam change, offer brownfield's **light path** instead of
+the full chain: inline scoped survey → mini product spec (1–3 `PR-*`) → build plan (skip the technical
+spec when no architectural decision is being made), acceptance plan only if a user-observable journey
+changes. One combined checkpoint (mini spec + plan) replaces the per-phase gates; validators still run.
 
 ## Inputs
 
@@ -54,16 +62,21 @@ Run phases in order. At each **⏸ checkpoint**, present the artifact(s) and the
 phase's agent with the feedback and re-validate before re-presenting. Never skip a checkpoint.
 
 ### Phase 0 — Repo survey (feature mode only; skip for greenfield)
-1. Apply `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`. Survey the existing repo and write
-   `features/<feature-slug>/REPO_MAP.md` capturing, per that doc: the stack(s) (→ `profiles/` keys),
-   the architecture & module seams the feature attaches to, the test harness (commands, the **existing
-   E2E harness**, naming infixes), the conventions, the existing feature areas, the **existing
-   `PR-*`/ticket-key namespace** (scan any `features/*/` and prior plans), the **inherited constraints**
-   (the existing stack/platform/conventions that become hard constraints), and the integration points +
-   regression surface.
-2. **⏸ Checkpoint.** Present `REPO_MAP.md` and have the user **correct your understanding of their repo**
+1. Apply `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`. **Pick the survey tier:** a **scoped survey**
+   (the default — only the seams, conventions, tests, and namespace the feature touches, written to
+   `features/<feature-slug>/REPO_MAP.md` with an explicit "not surveyed" note) or a **full survey**
+   (first spec-kit run in the repo, or wide-blast-radius work — the complete map at repo-root
+   `REPO_MAP.md`). If a root `REPO_MAP.md` already exists, **delta off it**: read it, verify/extend
+   only the sections this feature touches, and refresh anything reality contradicts. Either tier
+   captures, per that doc: the stack(s) (→ `profiles/` keys), the architecture & module seams the
+   feature attaches to, the test harness (commands, the **existing E2E harness**, naming infixes), the
+   conventions, the existing feature areas, the **existing `PR-*`/ticket-key namespace**, the
+   **inherited constraints**, and the integration points + regression surface — **split into
+   must-stay-green vs. must-be-migrated when behavior is changing**.
+2. **⏸ Checkpoint.** Present the survey and have the user **correct your understanding of their repo**
    — this is the cheapest place to fix a wrong assumption, before it propagates through four phases.
-   Confirm the feature slug. **Get approval before phase 1.** Pass `REPO_MAP.md` to every later phase.
+   Confirm the feature slug, the survey tier, and (change mode) the regression-surface split. **Get
+   approval before phase 1.** Pass the survey to every later phase.
 
 > **Feature mode paths.** All artifacts below live under `features/<feature-slug>/`; pass `REPO_MAP.md`
 > to every agent; IDs/keys are feature-prefixed. The validator commands shown use bare filenames — in
@@ -115,9 +128,17 @@ Confirm the traceability spine is complete across the chain:
   `tracesTo` **and** at least one `acceptance-plan` journey's `tracesTo`. List any requirement missing
   design, build, or acceptance coverage — that gap is the most valuable thing this checkpoint surfaces.
 - The build plan emitted its `ci` done-gate ticket (build suite ∧ acceptance plan both green).
-- **Feature mode:** the done-gate also carries the **regression clause** (pre-existing suite + existing
-  E2E journeys stay green), and every integration-touching build ticket asserts "existing tests covering
-  <area> still pass." Confirm the feature's IDs/keys don't collide with `REPO_MAP.md`'s namespace.
+- **Feature mode:** the done-gate also carries the **regression clause** (the must-stay-green set:
+  pre-existing suite + existing E2E journeys outside the change), and every integration-touching build
+  ticket asserts "existing tests covering <area> still pass." Confirm the feature's IDs/keys don't
+  collide with the survey's namespace.
+- **Grounding spot-check (feature mode):** sample a few `modulesInScope` paths from each plan and
+  confirm they exist in the repo, and that named conventions (test-file infix, module seams) match
+  reality — greenfield-ish output (invented paths, generic conventions) is the failure mode this
+  catches.
+- **Change mode:** every `Modifies:` requirement has a behavior delta in the product spec, a
+  migration/rollout decision in the technical spec, **test-migration tickets** in the build plan for
+  the must-be-migrated set, and updated journeys replacing any superseded ones in the acceptance plan.
 
 ### Hand-off
 Summarize the artifacts produced and point to the next steps:

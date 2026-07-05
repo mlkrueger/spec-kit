@@ -67,13 +67,22 @@ wins, but note the divergence.
 
 ## Extending an existing repository (brownfield)
 
-When the work is *adding a feature* to a pre-existing repo, read and apply
+When the work targets a pre-existing repo, read and apply
 `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`, and read `REPO_MAP.md` if present. The existing stack,
 datastore, platform, auth model, and conventions are **de-facto hard constraints**: fold each into
 `constraints.yaml` as a hard constraint (rationale: "existing codebase"; owner: the team), and **design
 to the existing seams** named in the survey. Any divergence from an existing convention is an explicit
 ADR with a rejected alternative — never a silent re-decision. Name the integration points in the
 architecture, and write artifacts under `features/<feature-slug>/` with feature-prefixed `PR-*`/keys.
+
+- **Ground the design in the repo, not just the survey.** Verify every seam, interface, and
+  convention you design against by reading the actual files (brownfield principle 5) — the survey
+  summarizes and goes stale. Never name a module or interface you haven't opened in this run; where
+  a design decision leans on a verified fact, say what you checked.
+- **Change mode.** When the product spec carries `Modifies:` requirements, the design must address
+  the **migration and compatibility story** explicitly: data migration, API versioning or
+  compatibility window, feature-flag or cutover strategy, and rollback. A behavior change with no
+  rollout story is an unfinished design — treat these as first-class ADRs, not afterthoughts.
 
 ## Output: the technical specification
 
