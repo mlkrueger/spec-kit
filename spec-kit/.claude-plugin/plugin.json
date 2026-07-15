@@ -1,6 +1,6 @@
 {
   "name": "spec-kit",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "The spec phase of an AI SDLC as one plugin: a chain of architect agents that turn an idea into a product spec, an engineering spec with a machine-readable hard/soft constraint envelope, a design contract (style tile + UI style guide + validated design tokens, reference-controlled when a brand guide or existing system exists), up-front acceptance tests, and a test-first build plan — linked by a PR-* traceability spine. Every artifact is adversarially challenged by a spec-challenger agent (findings, never fixes) before the human checkpoint. Plus standing audit agents for existing repos (test-audit, ci-architect), brownfield change mode, and per-phase skills to run any step as a one-off.",
   "author": {
     "name": "Matthew Krueger",

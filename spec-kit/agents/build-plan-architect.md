@@ -85,6 +85,14 @@ the `reference/examples/` artifacts unless a schema question isn't answered by t
    as 2–3 well-pinned standard tickets plus, at most, one genuinely ambiguous core. Only tickets
    with a written can't-split justification stay `complex`; if more than ~10% of the plan remains
    `complex` after the pass, the decomposition is too coarse — go back to step 1 for those seams.
+7. **Derive `phase`** — a capped topological leveling of the final `blockedBy` graph, **computed,
+   never authored**: phase 1 = tickets with no blockers; every ticket's phase exceeds the phase of
+   each of its blockers; greedily split any level larger than the cap (`phaseCap`, default 10 —
+   team config may override) into consecutive phases. Phases are contiguous from 1, milestone-scoped
+   (meaningful only as *(milestone, phase)*), and **advisory** — `blockedBy` stays authoritative;
+   phases exist so executors get meaningful, bounded slices (dev-orchestrator uses `phase:K` as
+   natural respawn boundaries, falling back to count-based respawn when phases are absent). If you
+   later edit `blockedBy`, re-derive phases — the validator hard-fails any contradiction.
    Then **validate**.
 
 ### Fan-out for large systems (one sub-plan per epic)
@@ -127,6 +135,8 @@ Each ticket carries, beyond title/description:
   conventions the companion dev-orchestrator plugin consumes; a code-bearing ticket without a `mod:*`
   hint forces a manual grooming pass before any orchestrated run.
 - **`blockedBy` / `parent`** — ordering and grouping by `key`.
+- **`phase`** — the derived execution slice (decomposition step 7): capped topological leveling of
+  `blockedBy`, all-or-none across the plan, published as a bare `phase:K` label.
 
 ## Design inputs (frontend features)
 

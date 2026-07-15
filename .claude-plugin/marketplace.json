@@ -10,7 +10,7 @@
       "name": "spec-kit",
       "source": "./spec-kit",
       "description": "The spec phase of an AI SDLC as one plugin: product spec -> technical spec + hard/soft constraints (+ design contract for UI features) -> up-front acceptance plan + test-first build plan, linked by a PR-* traceability spine, each artifact adversarially challenged before your review. Works greenfield or brownfield (feature-addition and behavior-change). Run any phase as a one-off skill, challenge any spec, audit existing tests or CI, do a full run, or publish the plans to Linear/Jira.",
-      "version": "0.6.1"
+      "version": "0.7.0"
     }
   ]
 }

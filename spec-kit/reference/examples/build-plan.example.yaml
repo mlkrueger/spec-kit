@@ -15,6 +15,7 @@ tickets:
     stack: python
     tier: standard
     labels: ["mod:orders", "resource:db"]
+    phase: 1
     description: |
       Define the order-store seam the coordinator and lookup depend on: recordOrder and
       findOrder, with a uniform NotFound that cannot distinguish unknown-email from
@@ -46,6 +47,7 @@ tickets:
     stack: python
     tier: standard
     labels: ["mod:test-harness"]
+    phase: 1
     description: |
       Shared test harness: a hand-rolled fake payment processor (so tests can assert the
       charge payload and simulate decline/timeout) and seeded order-store fixtures.
@@ -65,6 +67,7 @@ tickets:
     stack: python
     tier: complex
     labels: ["mod:checkout"]
+    phase: 2
     description: |
       The checkout coordinator: validate cart, capture contact/shipping/payment intent,
       delegate the charge, and record the order ONLY on a confirmed charge. Owns the
@@ -99,6 +102,7 @@ tickets:
     stack: python
     tier: standard
     labels: ["mod:checkout"]
+    phase: 3
     description: |
       Return the OrderConfirmation synchronously (primary proof) and fire-and-forget the
       emailed confirmation so a slow/failed message provider never blows the latency budget
@@ -128,6 +132,7 @@ tickets:
     stack: python
     tier: simple
     labels: ["mod:orders"]
+    phase: 2
     description: |
       Read-only lookup over the order store. Mechanical given the interface ticket's seam ->
       simple tier: a cheap executor can drive red->green->refactor from the failing tests.
@@ -155,6 +160,7 @@ tickets:
     layer: ci
     stack: "-"
     labels: ["mod:ci"]
+    phase: 4
     description: |
       Wire the meta-gate asserting the feature is done: the inner suite (this build plan's
       unit/integration tests) AND the outer acceptance-plan E2E job must both be green.

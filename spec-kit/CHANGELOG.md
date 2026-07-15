@@ -10,7 +10,20 @@ release body for that version's tag.
 
 ## [Unreleased]
 
-## [0.6.1] — 2026-07-15
+## [0.7.0] — 2026-07-15
+
+### Added
+- **Dependency-layer phasing (`phase`) — MKR-445.** Build-plan tickets gain an optional first-class
+  `phase: integer ≥1`: a capped topological leveling of the `blockedBy` graph (phase 1 = no blockers;
+  every ticket's phase exceeds each blocker's; levels greedily split at `phaseCap`, default 10).
+  Derived by build-plan-architect (decomposition step 7), **never hand-authored**; advisory
+  (dependencies stay authoritative) and milestone-scoped (read as *(milestone, phase)*, never
+  globally). `validate-build-plan` hard-fails contradiction with `blockedBy`, cap violations
+  (`--phase-cap` to override), numbering gaps, and partial coverage (phasing is all-or-none);
+  unphased plans remain fully valid. `publish-linear` emits a bare `phase:K` label, idempotent on
+  re-publish. Interop: dev-orchestrator (MKR-444) uses phases as milestone-orchestrator respawn
+  boundaries and falls back to count-based respawn when absent — phases are guidance, not a
+  correctness dependency.
 
 ### Added
 - **Orchestration-hint labels: `mod:<area>` and `resource:<name>`.** Build-plan tickets now carry

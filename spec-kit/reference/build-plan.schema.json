@@ -136,6 +136,11 @@
       "complex"
      ]
     },
+    "phase": {
+     "description": "Optional execution phase: a capped topological leveling of the blockedBy graph (phase 1 = no blockers; every ticket's phase exceeds each blocker's phase). DERIVED from the dependency graph + a per-team cap (phaseCap, default ~10), never hand-authored; dependencies stay authoritative -- phase is advisory slicing for executors (e.g. dev-orchestrator respawn boundaries) and is milestone-scoped, only meaningful as (milestone, phase). If any ticket carries phase, all must; the validator enforces consistency, cap, and contiguity.",
+     "type": "integer",
+     "minimum": 1
+    },
     "labels": {
      "description": "Free-form neutral labels. Adapters may prefix/translate them -- EXCEPT the orchestration hints, which pass through verbatim: mod:<area> (component seam; execution orchestrators parallelize by it) and resource:<name> (shared mutable resource needing exclusive use, e.g. resource:db on migrations; orchestrators never run two tickets sharing one in parallel).",
      "type": "array",

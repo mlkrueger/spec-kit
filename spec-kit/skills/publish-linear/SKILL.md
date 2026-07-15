@@ -57,6 +57,7 @@ the team has estimates disabled.
 | rendered body (`description` + the plan-kind sections from `publishing.md`) | issue description |
 | `layer`, `stack`, `labels` | labels (prefixed by `labelPrefix`) |
 | `tier` (build-plan) | label `tier:<value>` (verbatim) |
+| `phase` (build-plan) | label `phase:<K>` (verbatim; milestone-scoped — consumers read it as *(milestone, phase)*) |
 | each `tracesTo` `PR-*` | label `pr:<PR-id>` (verbatim) |
 | `priority` | Linear priority via `config.priorityMap` |
 | `estimate` | issue estimate (dropped if the team has estimates disabled) |

@@ -33,6 +33,7 @@ plan
         ├── constraintRefs?     # keys from constraints.yaml this ticket must honor
         ├── tracesTo?           # PR-* product-requirement IDs (traceability spine)
         ├── tier?               # advisory: simple|standard|complex (model-routing hint)
+        ├── phase?              # advisory: derived execution slice (capped leveling of blockedBy)
         ├── acceptanceCriteria  # REQUIRED. checkable DoD incl. the red->green->refactor loop
         ├── stack?, priority?, estimate?, labels?
         └── parent?, blockedBy?
@@ -76,6 +77,23 @@ The plan stays declarative; **what each tier maps to** (which model, subscriptio
 per-team config, not in the plan — the same neutral-plan-plus-config split the publishers use. If you'd
 rather keep the plan fully model-agnostic, omit `tier` and let the orchestrator infer from
 `estimate`/`layer`.
+
+## The `phase` field
+
+`phase` slices *execution* (never the milestone — that stays one semantic unit) into dependency-honest
+chunks an orchestrator can run with bounded context:
+
+- **Derived, never authored**: a topological leveling of the `blockedBy` graph — phase 1 has no
+  blockers; every ticket's phase exceeds each blocker's phase — greedily split so no phase exceeds the
+  cap (`phaseCap`, default 10, per-team config). A pure function of the graph + cap.
+- **All-or-none, contiguous from 1**: partial phasing is meaningless; `validate-build-plan` hard-fails
+  mixed coverage, cap violations, numbering gaps, and any phase that contradicts a `blockedBy` edge
+  (drift after editing dependencies without re-deriving).
+- **Advisory and milestone-scoped**: dependencies stay authoritative; `phase` is read as
+  *(milestone, phase)*, never globally. Publishers emit it as a bare `phase:K` label. The companion
+  dev-orchestrator uses phases as natural respawn boundaries (layer K+1 depends only on ≤K); when the
+  field is absent it falls back to its own count-based respawn — phases are guidance, not a
+  correctness dependency.
 
 ## The done-gate ticket (always emitted)
 

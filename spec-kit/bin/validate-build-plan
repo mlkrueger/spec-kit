@@ -54,6 +54,7 @@ COMPLEX_MAX_SHARE = 0.15
 MAX_TDD_CASES = 5
 MAX_MODULES_IN_SCOPE = 6
 CODE_BEARING_LAYERS = {"feature", "interface", "migration"}
+PHASE_CAP = 10
 
 
 def fail(errors: list[str]) -> None:
@@ -185,6 +186,55 @@ def check_tier_mix(plan: dict, complex_max_share: float) -> list[str]:
     return errors
 
 
+def check_phases(plan: dict, phase_cap: int) -> list[str]:
+    """Phases are DERIVED execution slices (capped topological leveling of
+    blockedBy) -- advisory, milestone-scoped, with dependencies authoritative.
+
+    Invariants: all-or-none coverage; phase(t) > phase(b) for every blocker b
+    (a contradiction is a hard failure -- the phase drifted from the graph);
+    no phase exceeds the cap; phases number 1..max with no gaps.
+    """
+    errors: list[str] = []
+    tickets = [t for t in (plan.get("tickets", []) or []) if isinstance(t, dict)]
+    phased = [t for t in tickets if t.get("phase") is not None]
+    if not phased:
+        return errors
+    if len(phased) != len(tickets):
+        missing = [t.get("key") for t in tickets if t.get("phase") is None]
+        errors.append(
+            f"phase: set on {len(phased)}/{len(tickets)} tickets -- phasing is all-or-none; "
+            f"missing on: {', '.join(map(repr, missing))}"
+        )
+        return errors
+
+    phase_of = {t.get("key"): t["phase"] for t in tickets}
+    for t in tickets:
+        k = t.get("key")
+        for b in t.get("blockedBy", []) or []:
+            if b in phase_of and phase_of[k] <= phase_of[b]:
+                errors.append(
+                    f"{k!r}: phase {phase_of[k]} does not follow blocker {b!r} "
+                    f"(phase {phase_of[b]}) -- phases contradict blockedBy; re-derive them"
+                )
+
+    counts: dict[int, int] = {}
+    for t in tickets:
+        counts[t["phase"]] = counts.get(t["phase"], 0) + 1
+    for ph in sorted(counts):
+        if counts[ph] > phase_cap:
+            errors.append(
+                f"phase {ph}: {counts[ph]} tickets (cap {phase_cap}) -- re-derive with the cap "
+                "(split the layer greedily); do not hand-edit phases"
+            )
+    expected = set(range(1, max(counts) + 1))
+    gaps = sorted(expected - set(counts))
+    if gaps:
+        errors.append(f"phase numbering has gaps (missing {gaps}) -- phases must run 1..max contiguously")
+    if min(counts) != 1:
+        errors.append(f"phases must start at 1 (first phase is {min(counts)})")
+    return errors
+
+
 def resolve_constraint_keys(args_constraints, plan, plan_path, needed) -> set[str]:
     """Load constraint keys, requiring a source iff any constraintRefs are used."""
     if not needed:
@@ -261,6 +311,12 @@ def main() -> None:
         default=COMPLEX_MAX_SHARE,
         help=f"max share of tickets tiered `complex` (default {COMPLEX_MAX_SHARE}; a floor of 1 ticket always passes)",
     )
+    ap.add_argument(
+        "--phase-cap",
+        type=int,
+        default=PHASE_CAP,
+        help=f"max tickets per execution phase (default {PHASE_CAP}); only checked when tickets carry `phase`",
+    )
     args = ap.parse_args()
 
     plan_path = Path(args.plan)
@@ -283,6 +339,7 @@ def main() -> None:
     if not errors:
         errors += check_structure(plan)
         errors += check_tier_mix(plan, args.complex_max_share)
+        errors += check_phases(plan, args.phase_cap)
 
         tickets = plan.get("tickets", []) or []
         needs_constraints = any(t.get("constraintRefs") for t in tickets if isinstance(t, dict))

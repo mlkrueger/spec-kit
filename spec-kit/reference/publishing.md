@@ -97,6 +97,9 @@ These neutral fields become labels (a publisher may prefix/translate per config)
 - `mod:<area>` and `resource:<name>` entries in `labels` (build-plan orchestration hints) pass through
   **verbatim** for the same reason: the companion `dev-orchestrator` plugin parallelizes by `mod:*`
   and serializes on `resource:*`. Never prefix/translate them.
+- `phase` (build-plan) → a bare label named exactly `phase:<K>`. Milestone-scoped **by contract**:
+  consumers always read it as *(milestone, phase)*, never query it globally. dev-orchestrator uses it
+  for respawn boundaries; when absent it falls back to its own count-based slicing.
 - each `tracesTo` `PR-*` → a label like `pr:PR-checkout-guest`, so coverage is queryable in the tracker.
 
 `priority` maps via `config.priorityMap`; `estimate` maps to the tracker's points field (dropped where

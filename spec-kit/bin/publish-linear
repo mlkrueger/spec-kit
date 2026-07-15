@@ -133,6 +133,8 @@ def ticket_labels(ticket: dict, cfg: dict) -> list[str]:
             names.append(f"{prefix}{v}")
     if ticket.get("tier"):
         names.append(f"tier:{ticket['tier']}")
+    if ticket.get("phase") is not None:
+        names.append(f"phase:{ticket['phase']}")
     for pr in ticket.get("tracesTo") or []:
         names.append(f"pr:{pr}")
     # dedupe, keep order
@@ -558,7 +560,7 @@ def main() -> None:
             print(f"warning: defaultAssignee {linear_cfg['defaultAssignee']!r} did not "
                   "resolve to a Linear user -- issues will be unassigned", file=sys.stderr)
 
-    managed_prefixes = (f"{cfg['markerPrefix']}:", "tier:", "pr:")
+    managed_prefixes = (f"{cfg['markerPrefix']}:", "tier:", "pr:", "phase:")
     ids: dict[str, str] = {}  # ticket key -> issue id
     report = []
     for t, act, found in actions:
