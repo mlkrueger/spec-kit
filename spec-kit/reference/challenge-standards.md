@@ -153,6 +153,13 @@ the artifact contradicts; an uncited "this looks wrong" is not a finding).
   refactor.
 - **`simple`-tier tickets that aren't** — the tier hint is a promise to the model router; a
   "simple" ticket hiding a design decision will be built wrong by a cheap model.
+- **`complex`-tier inflation** — the mirror failure, and the more expensive one: `complex` routes
+  to the priciest model, so over-tiering silently multiplies run cost. Tier prices *residual
+  design ambiguity*, not domain riskiness — a ticket whose `interface` and `tddCases` fully pin
+  the design is `standard` even if it touches auth, RLS, or migrations. Challenge any plan whose
+  `complex` share exceeds ~10%, any `complex` ticket lacking a can't-split justification, and any
+  ticket that is really a bundle (>5 `tddCases`, >6 files in `modulesInScope`, a title joining
+  3+ behaviors) — oversized tickets fail at execution regardless of model tier.
 - **Tickets too vague to build** — an execution agent would have to re-derive design decisions the
   technical spec already made (or worse, make new ones).
 - **Feature mode:** `modulesInScope` that smell greenfield — invented paths, generic names the repo

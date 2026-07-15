@@ -79,7 +79,7 @@
         },
         "estimate": { "description": "Neutral effort estimate (story points).", "type": "number", "minimum": 0 },
         "tier": {
-          "description": "Optional, advisory model-routing hint for an orchestrator. 'simple' = mechanical, well-bounded, a cheap model can drive red->green->refactor unattended; 'standard' = normal feature work; 'complex' = tricky/concurrency/security/cross-cutting, reserve a stronger model and/or human review. The plan stays declarative; the orchestrator decides what each tier maps to via per-team config.",
+          "description": "Optional, advisory model-routing hint for an orchestrator. Tier prices residual design ambiguity, not domain riskiness: 'simple' = mechanical, well-bounded, a cheap model can drive red->green->refactor unattended; 'standard' = normal feature work, the default -- including security/migration work whose interface+tddCases fully pin the design; 'complex' = genuine design judgment remains at build time, reserve a stronger model and/or human review (budget ~1 in 10; the validator caps the share at 15%). The plan stays declarative; the orchestrator decides what each tier maps to via per-team config.",
           "type": "string",
           "enum": ["simple", "standard", "complex"]
         },

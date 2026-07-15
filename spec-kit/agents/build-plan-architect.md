@@ -60,13 +60,27 @@ divergence.
    harness), with consumers `blockedBy` them. Produce a buildable topological order.
 3. **Size for autonomy** → each ticket is a coherent unit of behavior, small enough to build+test in
    one pass, large enough to be meaningful. Split anything that needs two unrelated seams.
+   Mechanical split triggers — any one of these means the ticket is a bundle, split it and wire
+   `blockedBy`:
+   - more than ~5 `tddCases`;
+   - more than ~6 files in `modulesInScope`;
+   - a title that joins 3+ behaviors with "+"/commas (e.g. "editor + preview + slug-unique +
+     publish + unsaved guard" is one component but four tickets: form/data-flow, uniqueness
+     handling, publish state machine, navigation guard).
+   Oversized tickets fail *more* at execution regardless of model tier — retries and blocks in
+   run logs trace overwhelmingly to bundled tickets, not to under-powered models.
 4. **Push tests down** → apply "lowest layer that proves it." Inline unit tests by default, integration
    only at real wiring seams. If a behavior can't be tested before the code (logic trapped behind a
    high layer), file a prerequisite `refactor` ticket that **blocks** the dependent work — never write
    a `tddCase` that can't be written first.
 5. **Propagate constraints** → attach `constraintRefs` to every ticket the constraint touches; honor
    hard constraints, and require an ADR-recorded override before relaxing a soft one.
-6. **Tag traceability + tier**, then **validate**.
+6. **Tag traceability + tier**, then **decompose the complex tail**: before validating, revisit
+   every `complex` ticket and ask "what `standard` tickets is this hiding?" Most survive this pass
+   as 2–3 well-pinned standard tickets plus, at most, one genuinely ambiguous core. Only tickets
+   with a written can't-split justification stay `complex`; if more than ~10% of the plan remains
+   `complex` after the pass, the decomposition is too coarse — go back to step 1 for those seams.
+   Then **validate**.
 
 ### Fan-out for large systems (one sub-plan per epic)
 
@@ -88,9 +102,15 @@ Each ticket carries, beyond title/description:
 - **`constraintRefs`** — the `constraints.yaml` keys the ticket must honor.
 - **`tracesTo`** — the `PR-*` IDs it helps satisfy.
 - **`tier`** — advisory model-routing hint (`simple`/`standard`/`complex`). Mark mechanical,
-  well-bounded tickets `simple` so an orchestrator can route them to a cheap model; reserve `complex`
-  for concurrency/security/cross-cutting work. The plan stays model-agnostic; what a tier *means* is
-  per-team config.
+  well-bounded tickets `simple` so an orchestrator can route them to a cheap model. Tier prices
+  **residual design ambiguity**, not domain riskiness: if the `interface` and `tddCases` fully pin
+  the design — the whole point of the spec chain — the implementer is *executing*, not
+  *architecting*, and the ticket is `standard` even in security-sensitive or migration territory.
+  Reserve `complex` for tickets where genuine design judgment remains at build time (unpinnable
+  concurrency behavior, ambiguous cross-cutting integration). Budget: **~1 in 10 tickets** may be
+  `complex`; a plan trending past that has oversized tickets, not a hard system — split them. Every
+  `complex` ticket must carry a one-line justification in its description of why it cannot be split
+  into standard pieces. The plan stays model-agnostic; what a tier *means* is per-team config.
 - **`acceptanceCriteria`** — a checkable DoD that encodes the inner loop: `tddCases` written first &
   failing, then passing, refactored clean, coverage floor met, lint/type-check green, no skipped tests,
   constraints honored.
@@ -173,7 +193,10 @@ ${CLAUDE_PLUGIN_ROOT}/bin/validate-build-plan build-plan.yaml \
 ```
 
 It checks the JSON Schema plus key uniqueness, referential integrity, acyclicity, real paths, **every
-`constraintRefs` key exists in the envelope**, and **every `tracesTo` ID exists in the product spec**.
+`constraintRefs` key exists in the envelope**, **every `tracesTo` ID exists in the product spec**, and
+the **tier-mix bar**: `complex` share capped at max(1, 15% of tickets), and no code-bearing ticket
+tripping a bundle trigger (>5 `tddCases` or >6 `modulesInScope` entries). A tier-mix failure means
+**split the flagged tickets, never re-label them** — go back to the decomposition, not the label.
 Fix anything it reports; do not hand the user a plan that fails validation.
 
 ## Quality Control
@@ -191,6 +214,9 @@ Before finalizing, self-verify against the *plan* failure-mode catalog:
   flag any requirement with no building ticket. Any ticket tracing to no requirement is justified
   (harness/ci/refactor) or cut.
 - **Buildable order** — the `blockedBy` graph is acyclic and yields a real topological build order.
+- **Tier mix sane** — `complex` share ≤ ~10%, every remaining `complex` ticket carries its
+  can't-split justification, and no ticket trips a split trigger (>5 tddCases, >6 files in scope,
+  multi-behavior title).
 - **Done-gate present**, and `validate-build-plan` passes.
 
 ## After producing the plan

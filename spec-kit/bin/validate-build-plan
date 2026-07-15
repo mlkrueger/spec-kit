@@ -13,6 +13,15 @@ make the traceability spine enforced rather than aspirational:
   * every constraintRefs key exists in the constraint envelope (constraints.yaml);
   * every tracesTo id exists in the product spec (PRODUCT_SPEC.md).
 
+Plus the tier-mix bar (tier prices residual design ambiguity, not domain riskiness):
+
+  * complex share: more than max(1, floor(0.15 * tickets)) tickets tiered `complex`
+    fails -- split the bundles into standard tickets, don't re-label them
+    (override the cap with --complex-max-share);
+  * bundle triggers on code-bearing tickets (feature/interface/migration):
+    >5 tddCases or >6 modulesInScope entries means the ticket is a bundle
+    hiding several tickets -- split it and wire blockedBy.
+
 The constraint envelope is resolved from --constraints, else the plan's top-level
 `constraints:` field (relative to the plan), else a sibling constraints.yaml. The
 product spec is resolved from --product-spec, else a sibling PRODUCT_SPEC.md. If a
@@ -40,6 +49,11 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_SCHEMA = HERE.parent / "reference" / "build-plan.schema.json"
 
 PR_ID = re.compile(r"\bPR-[a-z0-9]+(?:-[a-z0-9]+)*\b")
+
+COMPLEX_MAX_SHARE = 0.15
+MAX_TDD_CASES = 5
+MAX_MODULES_IN_SCOPE = 6
+CODE_BEARING_LAYERS = {"feature", "interface", "migration"}
 
 
 def fail(errors: list[str]) -> None:
@@ -131,6 +145,46 @@ def check_structure(plan: dict) -> list[str]:
     return errors
 
 
+def check_tier_mix(plan: dict, complex_max_share: float) -> list[str]:
+    """Tier prices residual design ambiguity, not domain riskiness.
+
+    A plan trending complex-heavy has oversized tickets, not a hard system; a
+    ticket tripping a bundle trigger fails at execution regardless of model tier.
+    """
+    errors: list[str] = []
+    tickets = [t for t in (plan.get("tickets", []) or []) if isinstance(t, dict)]
+    if not tickets:
+        return errors
+
+    complex_ids = [t.get("key") for t in tickets if t.get("tier") == "complex"]
+    allowed = max(1, int(len(tickets) * complex_max_share))
+    if len(complex_ids) > allowed:
+        errors.append(
+            f"tier mix: {len(complex_ids)}/{len(tickets)} tickets are `complex` "
+            f"(cap {allowed} = max(1, {complex_max_share:.0%} of plan)): "
+            f"{', '.join(map(repr, complex_ids))} -- split the bundles into "
+            "standard tickets with pinned interfaces/tddCases, don't re-label them"
+        )
+
+    for t in tickets:
+        if t.get("layer") not in CODE_BEARING_LAYERS:
+            continue
+        k = t.get("key")
+        n_tdd = len(t.get("tddCases", []) or [])
+        if n_tdd > MAX_TDD_CASES:
+            errors.append(
+                f"{k!r}: {n_tdd} tddCases (>{MAX_TDD_CASES}) -- this ticket bundles "
+                "several behaviors; split it and wire blockedBy"
+            )
+        n_mods = len(t.get("modulesInScope", []) or [])
+        if n_mods > MAX_MODULES_IN_SCOPE:
+            errors.append(
+                f"{k!r}: {n_mods} modulesInScope entries (>{MAX_MODULES_IN_SCOPE}) -- "
+                "this ticket touches too many files for one focused pass; split it"
+            )
+    return errors
+
+
 def resolve_constraint_keys(args_constraints, plan, plan_path, needed) -> set[str]:
     """Load constraint keys, requiring a source iff any constraintRefs are used."""
     if not needed:
@@ -201,6 +255,12 @@ def main() -> None:
     ap.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="path to the JSON Schema")
     ap.add_argument("--constraints", default=None, help="path to constraints.yaml (for constraintRefs)")
     ap.add_argument("--product-spec", default=None, help="path to PRODUCT_SPEC.md (for tracesTo)")
+    ap.add_argument(
+        "--complex-max-share",
+        type=float,
+        default=COMPLEX_MAX_SHARE,
+        help=f"max share of tickets tiered `complex` (default {COMPLEX_MAX_SHARE}; a floor of 1 ticket always passes)",
+    )
     args = ap.parse_args()
 
     plan_path = Path(args.plan)
@@ -222,6 +282,7 @@ def main() -> None:
     # Structural + cross-artifact checks only make sense once the shape is right.
     if not errors:
         errors += check_structure(plan)
+        errors += check_tier_mix(plan, args.complex_max_share)
 
         tickets = plan.get("tickets", []) or []
         needs_constraints = any(t.get("constraintRefs") for t in tickets if isinstance(t, dict))
