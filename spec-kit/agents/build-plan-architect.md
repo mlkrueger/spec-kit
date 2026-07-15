@@ -119,6 +119,13 @@ Each ticket carries, beyond title/description:
 - **`acceptanceCriteria`** — a checkable DoD that encodes the inner loop: `tddCases` written first &
   failing, then passing, refactored clean, coverage floor met, lint/type-check green, no skipped tests,
   constraints honored.
+- **`labels`: orchestration hints** — emit `mod:<area>` for the component seam(s) the ticket belongs
+  to (the same seams the decomposition used — `mod:api`, `mod:storage`, `mod:ui`; usually one, at most
+  a few) and `resource:<name>` for any shared mutable resource needing exclusive use (`resource:db`
+  on migrations and schema-touching tickets, a shared generated file, a global config). Execution
+  orchestrators parallelize by `mod:*` and serialize on `resource:*` — like `tier`, these are verbatim
+  conventions the companion dev-orchestrator plugin consumes; a code-bearing ticket without a `mod:*`
+  hint forces a manual grooming pass before any orchestrated run.
 - **`blockedBy` / `parent`** — ordering and grouping by `key`.
 
 ## Design inputs (frontend features)
@@ -225,6 +232,9 @@ Before finalizing, self-verify against the *plan* failure-mode catalog:
 - **Tier mix sane** — `complex` share ≤ ~10%, every remaining `complex` ticket carries its
   can't-split justification, and no ticket trips a split trigger (>5 tddCases, >6 files in scope,
   multi-behavior title).
+- **Orchestration hints present** — every code-bearing ticket carries a `mod:<area>` label; every
+  migration/schema-touching ticket (and anything else mutating a shared resource) carries the
+  applicable `resource:<name>`.
 - **Done-gate present**, and `validate-build-plan` passes.
 
 ## After producing the plan

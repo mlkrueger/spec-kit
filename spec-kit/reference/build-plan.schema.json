@@ -1,155 +1,241 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/mkrueger/spec-kit/reference/build-plan.schema.json",
-  "title": "Tracker-neutral build plan",
-  "description": "A tracker-agnostic plan of dependency-ordered IMPLEMENTATION tickets, each test-first: it carries the unit/integration tests to write BEFORE the code as inline TDD definition-of-done. Produced by the build-plan-architect agent from a technical spec (+ constraints.yaml + product spec); consumed by an execution agent and by tracker publishers. Holds INTENT only — no tracker-specific fields. Sibling to ticket-plan.schema.json (what to test) and acceptance-plan.schema.json (what journeys must pass); this one is what to BUILD, test-first.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["version", "title", "milestone", "tickets"],
-  "properties": {
-    "version": { "description": "Schema version. Bump only on breaking changes.", "const": 1 },
-    "spec": {
-      "description": "Filename of the companion human-readable build plan (e.g. BUILD_PLAN.md).",
-      "type": "string",
-      "minLength": 1
-    },
-    "constraints": {
-      "description": "Filename of the constraint envelope this plan honors (e.g. constraints.yaml). Referenced by tickets' constraintRefs; the validator checks those keys exist in it.",
-      "type": "string",
-      "minLength": 1
-    },
-    "title": { "description": "Human title for the plan.", "type": "string", "minLength": 1 },
-    "milestone": {
-      "description": "Single top-level grouping for all tickets. Adapters map this to a Linear Project/Milestone, a Jira Epic, or a GitHub Milestone. For one-sub-plan-per-epic fan-out, each component's sub-plan has its own milestone, merged on emit.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["key", "name"],
-      "properties": {
-        "key": {
-          "description": "Stable, unique, kebab-case identifier. Used for idempotent re-publish.",
-          "type": "string",
-          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
-        },
-        "name": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" }
-      }
-    },
-    "tickets": {
-      "description": "Flat list of implementation tickets. Hierarchy/ordering via parent + blockedBy by key.",
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/ticket" }
-    }
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/mkrueger/spec-kit/reference/build-plan.schema.json",
+ "title": "Tracker-neutral build plan",
+ "description": "A tracker-agnostic plan of dependency-ordered IMPLEMENTATION tickets, each test-first: it carries the unit/integration tests to write BEFORE the code as inline TDD definition-of-done. Produced by the build-plan-architect agent from a technical spec (+ constraints.yaml + product spec); consumed by an execution agent and by tracker publishers. Holds INTENT only \u2014 no tracker-specific fields. Sibling to ticket-plan.schema.json (what to test) and acceptance-plan.schema.json (what journeys must pass); this one is what to BUILD, test-first.",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "version",
+  "title",
+  "milestone",
+  "tickets"
+ ],
+ "properties": {
+  "version": {
+   "description": "Schema version. Bump only on breaking changes.",
+   "const": 1
   },
-  "$defs": {
-    "ticketKey": {
-      "description": "Stable, unique, kebab-case ticket identity. Referenced by parent/blockedBy and STAMPED onto the created issue for idempotent re-publish.",
+  "spec": {
+   "description": "Filename of the companion human-readable build plan (e.g. BUILD_PLAN.md).",
+   "type": "string",
+   "minLength": 1
+  },
+  "constraints": {
+   "description": "Filename of the constraint envelope this plan honors (e.g. constraints.yaml). Referenced by tickets' constraintRefs; the validator checks those keys exist in it.",
+   "type": "string",
+   "minLength": 1
+  },
+  "title": {
+   "description": "Human title for the plan.",
+   "type": "string",
+   "minLength": 1
+  },
+  "milestone": {
+   "description": "Single top-level grouping for all tickets. Adapters map this to a Linear Project/Milestone, a Jira Epic, or a GitHub Milestone. For one-sub-plan-per-epic fan-out, each component's sub-plan has its own milestone, merged on emit.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "key",
+    "name"
+   ],
+   "properties": {
+    "key": {
+     "description": "Stable, unique, kebab-case identifier. Used for idempotent re-publish.",
+     "type": "string",
+     "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "description": {
+     "type": "string"
+    }
+   }
+  },
+  "tickets": {
+   "description": "Flat list of implementation tickets. Hierarchy/ordering via parent + blockedBy by key.",
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "$ref": "#/$defs/ticket"
+   }
+  }
+ },
+ "$defs": {
+  "ticketKey": {
+   "description": "Stable, unique, kebab-case ticket identity. Referenced by parent/blockedBy and STAMPED onto the created issue for idempotent re-publish.",
+   "type": "string",
+   "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+  },
+  "prId": {
+   "description": "A product-requirement ID from the product spec (the traceability spine).",
+   "type": "string",
+   "pattern": "^PR-[a-z0-9]+(-[a-z0-9]+)*$"
+  },
+  "ticket": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "key",
+    "title",
+    "layer",
+    "description",
+    "modulesInScope",
+    "acceptanceCriteria"
+   ],
+   "properties": {
+    "key": {
+     "$ref": "#/$defs/ticketKey"
+    },
+    "title": {
+     "description": "Concise human title. Prefix with the layer for scannability, e.g. 'Feature: guest order placement'.",
+     "type": "string",
+     "minLength": 1
+    },
+    "layer": {
+     "description": "What kind of build work this is. feature/interface/migration are code-bearing and MUST carry tddCases (test-first); the rest support them.",
+     "type": "string",
+     "enum": [
+      "feature",
+      "interface",
+      "migration",
+      "infra",
+      "refactor",
+      "harness",
+      "ci",
+      "docs"
+     ]
+    },
+    "stack": {
+     "description": "Stack/area key for polyglot repos (e.g. 'python', 'js-frontend', 'js-node'). Omit or use '-' for single-stack.",
+     "type": "string"
+    },
+    "priority": {
+     "description": "Neutral priority. Adapters map to the tracker's scale via per-team config.",
+     "type": "string",
+     "enum": [
+      "low",
+      "medium",
+      "high",
+      "urgent"
+     ]
+    },
+    "estimate": {
+     "description": "Neutral effort estimate (story points).",
+     "type": "number",
+     "minimum": 0
+    },
+    "tier": {
+     "description": "Optional, advisory model-routing hint for an orchestrator. Tier prices residual design ambiguity, not domain riskiness: 'simple' = mechanical, well-bounded, a cheap model can drive red->green->refactor unattended; 'standard' = normal feature work, the default -- including security/migration work whose interface+tddCases fully pin the design; 'complex' = genuine design judgment remains at build time, reserve a stronger model and/or human review (budget ~1 in 10; the validator caps the share at 15%). The plan stays declarative; the orchestrator decides what each tier maps to via per-team config.",
+     "type": "string",
+     "enum": [
+      "simple",
+      "standard",
+      "complex"
+     ]
+    },
+    "labels": {
+     "description": "Free-form neutral labels. Adapters may prefix/translate them -- EXCEPT the orchestration hints, which pass through verbatim: mod:<area> (component seam; execution orchestrators parallelize by it) and resource:<name> (shared mutable resource needing exclusive use, e.g. resource:db on migrations; orchestrators never run two tickets sharing one in parallel).",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     },
+     "uniqueItems": true
+    },
+    "description": {
+     "description": "Markdown body: why this ticket exists and what it builds. Adapters render this plus the other fields into the issue body.",
+     "type": "string",
+     "minLength": 1
+    },
+    "interface": {
+     "description": "The contract to implement \u2014 function/class/endpoint signatures, request/response shapes \u2014 taken from the technical spec's boundaries. The seam, not full code. Strongly expected on feature/interface tickets.",
+     "type": "string"
+    },
+    "tddCases": {
+     "description": "The unit/integration cases to write FIRST (red), as 'input -> expected', including edges and the failure modes from unit-integration-standards.md. Required for code-bearing layers (feature/interface/migration). These are the failing tests that specify the work.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "modulesInScope": {
+     "description": "REAL, verified file paths an implementer will touch or read: the module(s) to create/edit, the test file to create (with the correct naming infix), and shared fixtures/harness/types/config. Never placeholders.",
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "constraintRefs": {
+     "description": "Keys from constraints.yaml this ticket must honor (e.g. 'lang-python', 'db-postgres'). The validator checks each key exists in the referenced constraints file, so compliance is mechanically checkable.",
+     "type": "array",
+     "items": {
       "type": "string",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+     },
+     "uniqueItems": true
     },
-    "prId": {
-      "description": "A product-requirement ID from the product spec (the traceability spine).",
+    "tracesTo": {
+     "description": "PR-* product-requirement IDs this ticket helps satisfy (the traceability spine). The validator checks each exists in the product spec.",
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/prId"
+     },
+     "uniqueItems": true
+    },
+    "acceptanceCriteria": {
+     "description": "Checkable Definition of Done as a checklist \u2014 not a restatement of the cases. For code-bearing layers this MUST encode the inner loop: tddCases written first & failing, then passing, refactored clean, coverage floor met, lint/type-check green, no skipped tests, constraints honored.",
+     "type": "array",
+     "minItems": 1,
+     "items": {
       "type": "string",
-      "pattern": "^PR-[a-z0-9]+(-[a-z0-9]+)*$"
+      "minLength": 1
+     }
     },
-    "ticket": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["key", "title", "layer", "description", "modulesInScope", "acceptanceCriteria"],
-      "properties": {
-        "key": { "$ref": "#/$defs/ticketKey" },
-        "title": {
-          "description": "Concise human title. Prefix with the layer for scannability, e.g. 'Feature: guest order placement'.",
-          "type": "string",
-          "minLength": 1
-        },
-        "layer": {
-          "description": "What kind of build work this is. feature/interface/migration are code-bearing and MUST carry tddCases (test-first); the rest support them.",
-          "type": "string",
-          "enum": ["feature", "interface", "migration", "infra", "refactor", "harness", "ci", "docs"]
-        },
-        "stack": {
-          "description": "Stack/area key for polyglot repos (e.g. 'python', 'js-frontend', 'js-node'). Omit or use '-' for single-stack.",
-          "type": "string"
-        },
-        "priority": {
-          "description": "Neutral priority. Adapters map to the tracker's scale via per-team config.",
-          "type": "string",
-          "enum": ["low", "medium", "high", "urgent"]
-        },
-        "estimate": { "description": "Neutral effort estimate (story points).", "type": "number", "minimum": 0 },
-        "tier": {
-          "description": "Optional, advisory model-routing hint for an orchestrator. Tier prices residual design ambiguity, not domain riskiness: 'simple' = mechanical, well-bounded, a cheap model can drive red->green->refactor unattended; 'standard' = normal feature work, the default -- including security/migration work whose interface+tddCases fully pin the design; 'complex' = genuine design judgment remains at build time, reserve a stronger model and/or human review (budget ~1 in 10; the validator caps the share at 15%). The plan stays declarative; the orchestrator decides what each tier maps to via per-team config.",
-          "type": "string",
-          "enum": ["simple", "standard", "complex"]
-        },
-        "labels": {
-          "description": "Free-form neutral labels. Adapters may prefix/translate them.",
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true
-        },
-        "description": {
-          "description": "Markdown body: why this ticket exists and what it builds. Adapters render this plus the other fields into the issue body.",
-          "type": "string",
-          "minLength": 1
-        },
-        "interface": {
-          "description": "The contract to implement — function/class/endpoint signatures, request/response shapes — taken from the technical spec's boundaries. The seam, not full code. Strongly expected on feature/interface tickets.",
-          "type": "string"
-        },
-        "tddCases": {
-          "description": "The unit/integration cases to write FIRST (red), as 'input -> expected', including edges and the failure modes from unit-integration-standards.md. Required for code-bearing layers (feature/interface/migration). These are the failing tests that specify the work.",
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "modulesInScope": {
-          "description": "REAL, verified file paths an implementer will touch or read: the module(s) to create/edit, the test file to create (with the correct naming infix), and shared fixtures/harness/types/config. Never placeholders.",
-          "type": "array",
-          "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "constraintRefs": {
-          "description": "Keys from constraints.yaml this ticket must honor (e.g. 'lang-python', 'db-postgres'). The validator checks each key exists in the referenced constraints file, so compliance is mechanically checkable.",
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
-          "uniqueItems": true
-        },
-        "tracesTo": {
-          "description": "PR-* product-requirement IDs this ticket helps satisfy (the traceability spine). The validator checks each exists in the product spec.",
-          "type": "array",
-          "items": { "$ref": "#/$defs/prId" },
-          "uniqueItems": true
-        },
-        "acceptanceCriteria": {
-          "description": "Checkable Definition of Done as a checklist — not a restatement of the cases. For code-bearing layers this MUST encode the inner loop: tddCases written first & failing, then passing, refactored clean, coverage floor met, lint/type-check green, no skipped tests, constraints honored.",
-          "type": "array",
-          "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "parent": {
-          "description": "Optional key of a parent ticket. A RELATIONSHIP, not nesting; adapters render as sub-issue/sub-task/checklist. Must reference another ticket's key.",
-          "$ref": "#/$defs/ticketKey"
-        },
-        "blockedBy": {
-          "description": "Keys of tickets that must be done first (a prerequisite interface, migration, refactor, or harness). Adapters map to 'blocked by' relations/links. Each must reference another ticket's key.",
-          "type": "array",
-          "items": { "$ref": "#/$defs/ticketKey" },
-          "uniqueItems": true
-        }
-      },
-      "allOf": [
-        {
-          "description": "Code-bearing layers must enumerate at least one tddCase (test-first).",
-          "if": {
-            "properties": { "layer": { "enum": ["feature", "interface", "migration"] } }
-          },
-          "then": {
-            "required": ["tddCases"],
-            "properties": { "tddCases": { "minItems": 1 } }
-          }
-        }
-      ]
+    "parent": {
+     "description": "Optional key of a parent ticket. A RELATIONSHIP, not nesting; adapters render as sub-issue/sub-task/checklist. Must reference another ticket's key.",
+     "$ref": "#/$defs/ticketKey"
+    },
+    "blockedBy": {
+     "description": "Keys of tickets that must be done first (a prerequisite interface, migration, refactor, or harness). Adapters map to 'blocked by' relations/links. Each must reference another ticket's key.",
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ticketKey"
+     },
+     "uniqueItems": true
     }
+   },
+   "allOf": [
+    {
+     "description": "Code-bearing layers must enumerate at least one tddCase (test-first).",
+     "if": {
+      "properties": {
+       "layer": {
+        "enum": [
+         "feature",
+         "interface",
+         "migration"
+        ]
+       }
+      }
+     },
+     "then": {
+      "required": [
+       "tddCases"
+      ],
+      "properties": {
+       "tddCases": {
+        "minItems": 1
+       }
+      }
+     }
+    }
+   ]
   }
+ }
 }

@@ -10,7 +10,19 @@ release body for that version's tag.
 
 ## [Unreleased]
 
-## [0.6.0] — 2026-07-15
+## [0.6.1] — 2026-07-15
+
+### Added
+- **Orchestration-hint labels: `mod:<area>` and `resource:<name>`.** Build-plan tickets now carry
+  the execution hints the companion dev-orchestrator plugin requires: `mod:<area>` for the ticket's
+  component seam (orchestrators parallelize by it) and `resource:<name>` for shared mutable
+  resources needing exclusive use (`resource:db` on migrations; orchestrators never run two tickets
+  sharing one in parallel). Emitted by build-plan-architect in the free-form `labels` field — no
+  schema change — and passed through **verbatim** by publishers, same rule as `tier:*`. The
+  spec-challenger's build-plan rubric now flags code-bearing tickets missing a `mod:*` hint and
+  schema-touching tickets missing `resource:db`. Field-driven: overheard's first orchestrated run
+  needed a manual ticket-smith grooming pass solely to add these labels; published plans are now
+  orchestration-ready as-is.
 
 ### Changed
 - **Idempotency identity is the hidden body marker; per-ticket marker labels are gone.** Publishers

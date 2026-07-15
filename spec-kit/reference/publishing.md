@@ -94,6 +94,9 @@ These neutral fields become labels (a publisher may prefix/translate per config)
 - `tier` (build-plan) → a label named exactly `tier:<value>` (`tier:simple` | `tier:standard` |
   `tier:complex`) so an execution orchestrator can query routable work. This exact format is what the
   companion `dev-orchestrator` plugin routes models on — keep it verbatim, don't prefix/translate it.
+- `mod:<area>` and `resource:<name>` entries in `labels` (build-plan orchestration hints) pass through
+  **verbatim** for the same reason: the companion `dev-orchestrator` plugin parallelizes by `mod:*`
+  and serializes on `resource:*`. Never prefix/translate them.
 - each `tracesTo` `PR-*` → a label like `pr:PR-checkout-guest`, so coverage is queryable in the tracker.
 
 `priority` maps via `config.priorityMap`; `estimate` maps to the tracker's points field (dropped where

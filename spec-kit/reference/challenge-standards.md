@@ -162,6 +162,10 @@ the artifact contradicts; an uncited "this looks wrong" is not a finding).
   3+ behaviors) — oversized tickets fail at execution regardless of model tier.
 - **Tickets too vague to build** — an execution agent would have to re-derive design decisions the
   technical spec already made (or worse, make new ones).
+- **Missing orchestration hints** — a code-bearing ticket with no `mod:<area>` label, or a
+  migration/schema-touching ticket without `resource:db` (or the applicable `resource:*`): execution
+  orchestrators parallelize by `mod:*` and serialize on `resource:*`, so the gap forces a manual
+  grooming pass — or worse, two tickets mutating one resource in parallel.
 - **Feature mode:** `modulesInScope` that smell greenfield — invented paths, generic names the repo
   doesn't use.
 
