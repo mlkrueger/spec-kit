@@ -41,6 +41,11 @@ Before producing any plan, read and apply:
 Treat these as authoritative. When a project's own conventions conflict, the project wins; note the
 divergence.
 
+**Context economy.** Read each standard once, early — never re-open one you've already read. Load
+only what applies: the profile(s) for the detected stack(s), and `brownfield.md` only when targeting
+an existing repo. Do not read the `reference/examples/` artifacts unless a schema question isn't
+answered by the schema doc itself.
+
 ## Inputs
 
 - **`PRODUCT_SPEC.md`** (primary) — its acceptance criteria (Given/When/Then) and user journeys are the
@@ -71,8 +76,10 @@ When the work targets a pre-existing repo, read and apply
 `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`, and read `REPO_MAP.md` if present. **Reuse the existing
 E2E harness** named in the survey — your `harness`-ticket `modulesInScope` reference the real existing
 rig and fixtures, not new ones (add only what the feature genuinely needs). **Verify the harness and
-spec paths in the repo before emitting them** (brownfield principle 5) — open the real rig, don't trust
-the map. Add the new feature's journeys, and in `ACCEPTANCE_SPEC.md` name the **existing journeys that
+spec paths in the repo before emitting them** (brownfield principle 5) — open the real rig files your
+harness ticket extends, but check mere path existence **in bulk** (one Glob per directory or a single
+`ls` Bash loop), and trust `REPO_MAP.md` for everything your journeys make no content claims about —
+spot-check the map, don't re-survey the repo. Add the new feature's journeys, and in `ACCEPTANCE_SPEC.md` name the **existing journeys that
 form the regression surface** for the area you touch — split per the change-mode rule:
 
 - **must-stay-green** — existing journeys outside the change; they pass unchanged.

@@ -10,6 +10,29 @@ release body for that version's tag.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-15
+
+### Added
+- **`bin/publish-linear`**: the Linear publish write path is now a bundled script (PEP-723 `uv` script,
+  Linear GraphQL API) instead of agent-driven MCP calls — batched reads (one stamped-issue query, one
+  label fetch), deterministic body rendering and label mapping per `publishing.md`, idempotent
+  skip/`--update`/create by marker label + body marker, dependency-ordered creation, `parent`/`blockedBy`
+  relation wiring with duplicate detection, `--dry-run` preview (works offline without `LINEAR_API_KEY`),
+  `--yes` write gate, and `--report` JSON output. The publish-linear skill now drives the script; the
+  MCP flow remains as a documented fallback for environments without an API key. Cuts a 40-ticket
+  publish from ~150 model-mediated tool calls to one command.
+
+### Changed
+- **Context economy for phase-3 agents.** brownfield principle 5 now distinguishes existence claims
+  (verify **in bulk** — one Glob per directory or a single `ls`/`test -f` loop, never one Read per file)
+  from content claims (Read only the files the artifact makes interface/seam claims about), and states
+  that grounding is not re-surveying — `REPO_MAP.md` is the authoritative inventory unless reality
+  contradicts it. build-plan-architect and acceptance-spec-architect carry the same discipline inline,
+  plus a "context economy" note on their standards lists (read each standard once; load only the
+  matching stack profile; `brownfield.md`/`ci-standards.md` only when applicable; skip
+  `reference/examples/` unless the schema doc leaves a question open). Cuts the early token spike in
+  phase-3 subagents.
+
 ## [0.4.0] — 2026-07-14
 
 ### Added

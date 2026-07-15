@@ -7,61 +7,57 @@ description: "Publish a tracker-neutral spec-kit plan (build-plan.yaml or accept
 
 Maps a tracker-neutral `build-plan.yaml` or `acceptance-plan.yaml` onto Linear. The portable contract —
 plan-kind detection, body rendering, idempotency stamping, preview/confirm — lives in
-`${CLAUDE_PLUGIN_ROOT}/reference/publishing.md`; **read it first**. This file adds only the Linear
-mapping and MCP calls.
+`${CLAUDE_PLUGIN_ROOT}/reference/publishing.md`. The whole write path is implemented by the bundled
+script **`${CLAUDE_PLUGIN_ROOT}/bin/publish-linear`** (Linear GraphQL API, batched calls, deterministic
+mapping) — **drive the script; do not publish ticket-by-ticket yourself.** An MCP fallback exists for
+environments without an API key (see *Fallback*).
 
 ## Prerequisites
 
-- **The Linear MCP server must be configured** in the user's environment. This plugin does not bundle
-  it (MCP bundling is all-or-nothing, so trackers stay opt-in). If the Linear MCP tools are
-  unavailable, stop and tell the user to connect the Linear MCP, then retry. If those tools are
-  deferred, load them first with `ToolSearch` (e.g. `select:mcp__plugin_linear_linear__list_teams,mcp__plugin_linear_linear__list_projects,mcp__plugin_linear_linear__save_project,mcp__plugin_linear_linear__list_issues,mcp__plugin_linear_linear__save_issue,mcp__plugin_linear_linear__list_issue_labels,mcp__plugin_linear_linear__create_issue_label`).
+- **`LINEAR_API_KEY`** in the environment (a Linear personal API key: Linear → Settings → Security &
+  access → Personal API keys). If unset, ask the user to export it (suggest they run
+  `! export LINEAR_API_KEY=...` so it lands in this session), or fall back to MCP.
 - A **validated** plan. Per `publishing.md` Step 0, validate with the matching tool before publishing
   and refuse a plan that fails.
-
-## Inputs
-
-- **Plan:** path argument, else `build-plan.yaml` or `acceptance-plan.yaml` in the working directory.
-- **Config:** `${CLAUDE_PROJECT_DIR}/.spec-kit/publisher.yaml` (Linear section). If missing, walk the
+- **Config** at `${CLAUDE_PROJECT_DIR}/.spec-kit/publisher.yaml` (Linear section). If missing, walk the
   user through it (see *Config*) — do not guess team/project.
-- **Flags:** `--update` (overwrite managed fields on existing issues; default skips if exists),
-  `--dry-run` (preview only; the first pass always previews and confirms before writing).
 
 ## Procedure
 
-Follow `publishing.md` Steps 0–5. The Linear bindings for each step:
+1. **Validate** (Step 0): run `validate-build-plan` / `validate-acceptance-plan` per plan kind; refuse
+   a failing plan.
+2. **Preview** — always first, no writes:
+   ```sh
+   ${CLAUDE_PLUGIN_ROOT}/bin/publish-linear <plan.yaml> --config .spec-kit/publisher.yaml --dry-run
+   ```
+   It prints the container action and the per-ticket create/update/skip set (add `--update` to the
+   preview if the user wants re-stamped issues overwritten). Show the user this summary and **get
+   explicit confirmation**.
+3. **Publish** — same command with `--yes` (plus `--update` if confirmed), and `--report` for a
+   machine-readable result:
+   ```sh
+   ${CLAUDE_PLUGIN_ROOT}/bin/publish-linear <plan.yaml> --config .spec-kit/publisher.yaml --yes --report publish-report.json
+   ```
+4. **Report** created/updated/skipped issues with their Linear identifiers/URLs (from the script's
+   output / the JSON report).
 
-1. **Detect & validate** (Step 0) — pick `validate-build-plan` or `validate-acceptance-plan` by plan
-   kind; refuse if it fails.
-2. **Config** (Step 1) — read the Linear routing config; resolve the team and target project via
-   `list_teams` / `list_projects`.
-3. **Milestone** (Step 2) — search for a Linear Project (or Milestone, per `milestoneAs`) stamped with
-   `<markerPrefix>:<milestone.key>`; create with `save_project` if absent, stamping the key.
-4. **Preview & confirm** (Step 3) — summarize create/update/skip; get explicit confirmation; honor
-   `--dry-run`.
-5. **Create/update issues** (Step 4), in dependency order:
-   - **Search** via `list_issues` filtered by the `<markerPrefix>:<key>` label; fall back to the body
-     marker.
-   - **Skip / `--update` / create** per the idempotency rule; create with `save_issue`.
-   - **Render the body** per `publishing.md` *Body rendering* for this plan kind, ending with the hidden
-     marker line.
-   - **Stamp** the `<markerPrefix>:<key>` label on create (create labels via `create_issue_label` as
-     needed).
-6. **Wire relationships** (Step 5) once issues exist: `parent` → Linear parent (sub-issue); each
-   `blockedBy` → a "blocked by" issue relation.
-7. **Report** created/updated/skipped issues with their Linear identifiers/URLs.
+The script implements the full contract: idempotency by `<markerPrefix>:<key>` label + hidden body
+marker (skip by default; `--update` overwrites managed fields only, preserving human-added labels),
+dependency-ordered creation, `parent` → sub-issue, `blockedBy` → "blocked by" relations (existing
+relations detected, never duplicated), labels created as needed, `estimate` dropped automatically if
+the team has estimates disabled.
 
 ## Mapping (neutral → Linear)
 
 | neutral | Linear |
 |---|---|
-| `milestone` | Project (default) or Milestone, per `milestoneAs` |
+| `milestone` | Project (default) or Project Milestone, per `milestoneAs` |
 | `ticket` | Issue (in the configured team/project) |
 | `title` | issue title |
 | rendered body (`description` + the plan-kind sections from `publishing.md`) | issue description |
-| `layer`, `stack`, `labels` | labels (config may prefix/translate) |
-| `tier` (build-plan) | label `tier:<value>` |
-| each `tracesTo` `PR-*` | label `pr:<PR-id>` |
+| `layer`, `stack`, `labels` | labels (prefixed by `labelPrefix`) |
+| `tier` (build-plan) | label `tier:<value>` (verbatim) |
+| each `tracesTo` `PR-*` | label `pr:<PR-id>` (verbatim) |
 | `priority` | Linear priority via `config.priorityMap` |
 | `estimate` | issue estimate (dropped if the team has estimates disabled) |
 | `parent` | parent issue (sub-issue) |
@@ -96,3 +92,12 @@ linear:
 
 If the file is absent, create it with the user (team + project at minimum), then proceed. This one-time
 setup is how a team pins Linear specifics without polluting the portable plan.
+
+## Fallback: Linear MCP (no API key available)
+
+When the user cannot mint an API key but has the Linear MCP connected, execute `publishing.md` Steps
+0–5 manually via the MCP tools (load them first with `ToolSearch`, e.g.
+`select:mcp__plugin_linear_linear__list_teams,mcp__plugin_linear_linear__list_projects,mcp__plugin_linear_linear__save_project,mcp__plugin_linear_linear__list_issues,mcp__plugin_linear_linear__save_issue,mcp__plugin_linear_linear__list_issue_labels,mcp__plugin_linear_linear__create_issue_label`):
+search by the `<markerPrefix>:<key>` label (body marker as fallback), skip/update/create per the
+idempotency rule, render bodies per `publishing.md`, stamp on create, then wire `parent`/`blockedBy`
+relations. This path is slow and token-heavy for large plans — prefer the script whenever possible.

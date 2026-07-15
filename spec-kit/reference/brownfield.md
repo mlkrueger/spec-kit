@@ -41,6 +41,18 @@ per-requirement, not per-run.
    greenfield-ish — invented paths, generic conventions, ignored seams — are the primary brownfield
    failure mode; this principle is the antidote.
 
+   **Verify cheaply — grounding is not re-surveying.** Match the verification to the claim:
+   - *Existence claims* (a path in `modulesInScope` is real): verify **in bulk** — one Glob per
+     directory or a single `ls`/`test -f` Bash loop over every candidate path, not one Read per
+     file. Existence never requires reading file contents.
+   - *Content claims* (an interface signature, a seam, a naming convention the artifact states):
+     Read only the specific files the claim is about, and prefer Grep or a targeted Read
+     (offset/limit) over pulling in whole files.
+   - *Everything else*: trust the survey. `REPO_MAP.md` exists so downstream phases don't re-explore
+     the repo — re-reading source the survey already mapped, "to be safe," is the context-bloat
+     failure mode that mirrors greenfield-ish output on the cost side. Re-open an area only when
+     grounding contradicts the map (then also refresh the map section).
+
 ## The survey is tiered
 
 A full repo survey before a two-file feature is ceremony that kills adoption; no survey at all

@@ -1,0 +1,546 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["pyyaml>=6", "requests>=2.31"]
+# ///
+"""Publish a tracker-neutral spec-kit plan to Linear via the GraphQL API.
+
+Implements the shared publishing contract (reference/publishing.md) as a
+deterministic script instead of agent-driven MCP calls: plan-kind-aware body
+rendering, label mapping, idempotency via key stamping (marker label +
+hidden body marker), skip/update/create semantics, dependency-ordered
+creation, and relation wiring -- in a handful of batched API calls.
+
+The plan should already be validated (validate-build-plan /
+validate-acceptance-plan); this script re-checks only basic shape.
+
+Auth: LINEAR_API_KEY environment variable (a personal API key).
+Config: .spec-kit/publisher.yaml (see the publish-linear SKILL.md).
+
+Usage:
+    publish-linear PLAN.yaml [--config PATH] [--dry-run] [--update] [--yes]
+                             [--report PATH]
+
+Safety model: with no flags the script previews the create/update/skip set
+and exits WITHOUT writing. Pass --yes to perform the writes. --dry-run
+forces preview-only. --dry-run without LINEAR_API_KEY degrades to an
+offline preview (no existing-issue lookup; everything shows as "create?").
+
+Exit codes: 0 = ok, 1 = publish error, 2 = usage/config error.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import requests
+import yaml
+
+API_URL = os.environ.get("LINEAR_API_URL", "https://api.linear.app/graphql")
+PAGE = 100
+
+DEFAULT_PRIORITY_MAP = {"urgent": 1, "high": 2, "medium": 3, "low": 4}
+
+
+def usage_error(msg: str) -> None:
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
+def publish_error(msg: str) -> None:
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+# ----------------------------------------------------------------------------
+# Plan loading & rendering (pure -- no network)
+# ----------------------------------------------------------------------------
+
+def load_plan(path: Path) -> dict:
+    try:
+        plan = yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError) as e:
+        usage_error(f"reading plan {str(path)!r}: {e}")
+    if not isinstance(plan, dict):
+        usage_error("plan is not a mapping/object")
+    tickets = plan.get("tickets") or []
+    milestone = plan.get("milestone") or {}
+    if not tickets or not milestone.get("key") or not milestone.get("name"):
+        usage_error("plan needs a milestone (key+name) and at least one ticket "
+                    "-- run the matching validator first")
+    keys = [t.get("key") for t in tickets]
+    if len(keys) != len(set(keys)) or not all(keys):
+        usage_error("ticket keys must be present and unique -- run the validator")
+    known = set(keys)
+    for t in tickets:
+        for ref in ([t.get("parent")] if t.get("parent") else []) + list(t.get("blockedBy") or []):
+            if ref not in known:
+                usage_error(f"{t['key']!r}: reference {ref!r} is not a ticket in this plan")
+    return plan
+
+
+def plan_kind(plan: dict) -> str:
+    tickets = plan.get("tickets") or []
+    if any(t.get("tddCases") or t.get("interface") or t.get("constraintRefs") for t in tickets):
+        return "build"
+    if any(t.get("layer") in ("e2e", "harness") for t in tickets):
+        return "acceptance"
+    return "ticket"  # legacy
+
+
+def render_body(ticket: dict, kind: str, marker_prefix: str) -> str:
+    """Body sections per publishing.md, hidden marker always last."""
+    parts = [ticket.get("description", "").rstrip()]
+
+    def section(title: str, value) -> None:
+        if not value:
+            return
+        if isinstance(value, list):
+            body = "\n".join(f"- {v}" for v in value)
+        else:
+            body = str(value).rstrip()
+        parts.append(f"## {title}\n{body}")
+
+    if kind == "build":
+        section("Interface", ticket.get("interface"))
+        section("TDD cases (write first)", ticket.get("tddCases"))
+        section("Constraints to honor", ticket.get("constraintRefs"))
+    elif kind == "acceptance":
+        section("Journeys", ticket.get("cases"))
+    else:
+        section("Cases", ticket.get("cases"))
+    section("Modules in scope", ticket.get("modulesInScope"))
+    section("Traces to", ticket.get("tracesTo"))
+    ac = ticket.get("acceptanceCriteria") or []
+    if ac:
+        parts.append("## Acceptance criteria\n" + "\n".join(f"- [ ] {c}" for c in ac))
+    parts.append(f"<!-- {marker_prefix}-key: {ticket['key']} -->")
+    return "\n\n".join(p for p in parts if p)
+
+
+def ticket_labels(ticket: dict, cfg: dict) -> list[str]:
+    """Managed label set per the contract: layer/stack/labels (prefixed),
+    tier:<v> and pr:<PR-id> verbatim, plus the idempotency marker."""
+    prefix = cfg.get("labelPrefix") or ""
+    names: list[str] = []
+    for v in [ticket.get("layer"), ticket.get("stack"), *(ticket.get("labels") or [])]:
+        if v and v != "-":
+            names.append(f"{prefix}{v}")
+    if ticket.get("tier"):
+        names.append(f"tier:{ticket['tier']}")
+    for pr in ticket.get("tracesTo") or []:
+        names.append(f"pr:{pr}")
+    names.append(f"{cfg['markerPrefix']}:{ticket['key']}")
+    # dedupe, keep order
+    seen: set[str] = set()
+    return [n for n in names if not (n in seen or seen.add(n))]
+
+
+def topo_order(tickets: list[dict]) -> list[dict]:
+    """Kahn over parent + blockedBy so targets exist before their dependents."""
+    by_key = {t["key"]: t for t in tickets}
+    deps = {k: set() for k in by_key}
+    for t in tickets:
+        if t.get("parent"):
+            deps[t["key"]].add(t["parent"])
+        deps[t["key"]].update(t.get("blockedBy") or [])
+    ordered, ready = [], sorted(k for k, d in deps.items() if not d)
+    remaining = {k: set(d) for k, d in deps.items() if d}
+    while ready:
+        k = ready.pop(0)
+        ordered.append(by_key[k])
+        for other in sorted(list(remaining)):
+            remaining[other].discard(k)
+            if not remaining[other]:
+                del remaining[other]
+                ready.append(other)
+    ordered += [by_key[k] for k in remaining]  # cycles: validator's job; don't lose tickets
+    return ordered
+
+
+# ----------------------------------------------------------------------------
+# Config
+# ----------------------------------------------------------------------------
+
+def load_config(path: Path) -> dict:
+    try:
+        cfg = yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError) as e:
+        usage_error(
+            f"reading config {str(path)!r}: {e}\n"
+            "Create .spec-kit/publisher.yaml first (see the publish-linear skill)."
+        )
+    if not isinstance(cfg, dict) or cfg.get("tracker") != "linear":
+        usage_error(f"{path}: expected a publisher config with `tracker: linear`")
+    linear = cfg.get("linear") or {}
+    if not linear.get("team"):
+        usage_error(f"{path}: `linear.team` is required (team key or name)")
+    cfg.setdefault("markerPrefix", "skp")
+    cfg.setdefault("labelPrefix", "")
+    cfg["priorityMap"] = {**DEFAULT_PRIORITY_MAP, **(cfg.get("priorityMap") or {})}
+    linear.setdefault("milestoneAs", "project")
+    cfg["linear"] = linear
+    return cfg
+
+
+# ----------------------------------------------------------------------------
+# Linear GraphQL client
+# ----------------------------------------------------------------------------
+
+class Linear:
+    def __init__(self, api_key: str):
+        self.s = requests.Session()
+        self.s.headers.update({"Authorization": api_key, "Content-Type": "application/json"})
+
+    def gql(self, query: str, variables: dict | None = None) -> dict:
+        for attempt in range(5):
+            resp = self.s.post(API_URL, json={"query": query, "variables": variables or {}}, timeout=60)
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", 2 ** attempt))
+                time.sleep(min(wait, 60))
+                continue
+            if resp.status_code >= 500:
+                time.sleep(2 ** attempt)
+                continue
+            data = resp.json()
+            if resp.status_code != 200 or data.get("errors"):
+                raise RuntimeError(f"Linear API error: {data.get('errors') or resp.text}")
+            return data["data"]
+        raise RuntimeError("Linear API: retries exhausted (rate limit / server errors)")
+
+    def paginate(self, query: str, variables: dict, *path: str) -> list[dict]:
+        nodes, cursor = [], None
+        while True:
+            data = self.gql(query, {**variables, "after": cursor})
+            for p in path:
+                data = data[p]
+            nodes += data["nodes"]
+            if not data["pageInfo"]["hasNextPage"]:
+                return nodes
+            cursor = data["pageInfo"]["endCursor"]
+
+    # -- lookups (one or two calls each, paginated) --------------------------
+
+    def team(self, key_or_name: str) -> dict:
+        data = self.gql(
+            """query($v: String!) { teams(filter: { or: [
+                 { key: { eq: $v } }, { name: { eqIgnoreCase: $v } } ] })
+               { nodes { id key name } } }""",
+            {"v": key_or_name},
+        )
+        nodes = data["teams"]["nodes"]
+        if not nodes:
+            publish_error(f"Linear team {key_or_name!r} not found")
+        return nodes[0]
+
+    def projects(self, team_id: str) -> list[dict]:
+        return self.paginate(
+            """query($id: String!, $after: String) { team(id: $id) {
+                 projects(first: 100, after: $after)
+                 { nodes { id name description url } pageInfo { hasNextPage endCursor } } } }""",
+            {"id": team_id}, "team", "projects",
+        )
+
+    def project_milestones(self, project_id: str) -> list[dict]:
+        return self.paginate(
+            """query($id: String!, $after: String) { project(id: $id) {
+                 projectMilestones(first: 100, after: $after)
+                 { nodes { id name description } pageInfo { hasNextPage endCursor } } } }""",
+            {"id": project_id}, "project", "projectMilestones",
+        )
+
+    def labels(self, team_id: str) -> dict[str, str]:
+        nodes = self.paginate(
+            """query($id: String!, $after: String) { team(id: $id) {
+                 labels(first: 250, after: $after)
+                 { nodes { id name } pageInfo { hasNextPage endCursor } } } }""",
+            {"id": team_id}, "team", "labels",
+        )
+        return {n["name"]: n["id"] for n in nodes}
+
+    def stamped_issues(self, team_id: str, marker_prefix: str) -> list[dict]:
+        """All issues in the team carrying a marker label -- one paginated query."""
+        return self.paginate(
+            """query($id: ID!, $prefix: String!, $after: String) {
+                 issues(first: 100, after: $after, filter: {
+                   team: { id: { eq: $id } },
+                   labels: { name: { startsWith: $prefix } } })
+                 { nodes { id identifier url title description
+                           labels(first: 50) { nodes { id name } }
+                           parent { id }
+                           relations(first: 50) { nodes { type relatedIssue { id } } } }
+                   pageInfo { hasNextPage endCursor } } }""",
+            {"id": team_id, "prefix": f"{marker_prefix}:"}, "issues",
+        )
+
+    def user_id(self, email_or_id: str) -> str | None:
+        if "@" not in email_or_id:
+            return email_or_id
+        data = self.gql(
+            """query($e: String!) { users(filter: { email: { eq: $e } }) { nodes { id } } }""",
+            {"e": email_or_id},
+        )
+        nodes = data["users"]["nodes"]
+        return nodes[0]["id"] if nodes else None
+
+    # -- writes ---------------------------------------------------------------
+
+    def create_label(self, team_id: str, name: str) -> str:
+        data = self.gql(
+            """mutation($input: IssueLabelCreateInput!) {
+                 issueLabelCreate(input: $input) { issueLabel { id } } }""",
+            {"input": {"teamId": team_id, "name": name}},
+        )
+        return data["issueLabelCreate"]["issueLabel"]["id"]
+
+    def create_project(self, team_id: str, name: str, description: str) -> dict:
+        data = self.gql(
+            """mutation($input: ProjectCreateInput!) {
+                 projectCreate(input: $input) { project { id name url } } }""",
+            {"input": {"teamIds": [team_id], "name": name, "description": description}},
+        )
+        return data["projectCreate"]["project"]
+
+    def create_project_milestone(self, project_id: str, name: str, description: str) -> dict:
+        data = self.gql(
+            """mutation($input: ProjectMilestoneCreateInput!) {
+                 projectMilestoneCreate(input: $input) { projectMilestone { id name } } }""",
+            {"input": {"projectId": project_id, "name": name, "description": description}},
+        )
+        return data["projectMilestoneCreate"]["projectMilestone"]
+
+    def create_issue(self, inp: dict) -> dict:
+        try:
+            data = self.gql(
+                """mutation($input: IssueCreateInput!) {
+                     issueCreate(input: $input) { issue { id identifier url } } }""",
+                {"input": inp},
+            )
+        except RuntimeError as e:
+            if "estimate" in str(e).lower() and "estimate" in inp:
+                inp = {k: v for k, v in inp.items() if k != "estimate"}
+                return self.create_issue(inp)
+            raise
+        return data["issueCreate"]["issue"]
+
+    def update_issue(self, issue_id: str, inp: dict) -> None:
+        try:
+            self.gql(
+                """mutation($id: String!, $input: IssueUpdateInput!) {
+                     issueUpdate(id: $id, input: $input) { success } }""",
+                {"id": issue_id, "input": inp},
+            )
+        except RuntimeError as e:
+            if "estimate" in str(e).lower() and "estimate" in inp:
+                self.update_issue(issue_id, {k: v for k, v in inp.items() if k != "estimate"})
+                return
+            raise
+
+    def create_relation(self, blocker_id: str, blocked_id: str) -> None:
+        """blocker blocks blocked."""
+        try:
+            self.gql(
+                """mutation($input: IssueRelationCreateInput!) {
+                     issueRelationCreate(input: $input) { success } }""",
+                {"input": {"issueId": blocker_id, "relatedIssueId": blocked_id, "type": "blocks"}},
+            )
+        except RuntimeError as e:
+            if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+                return
+            raise
+
+
+# ----------------------------------------------------------------------------
+# Main flow
+# ----------------------------------------------------------------------------
+
+def marker_of(cfg: dict, key: str) -> str:
+    return f"{cfg['markerPrefix']}:{key}"
+
+
+def find_stamped(existing: list[dict], cfg: dict, key: str) -> dict | None:
+    label = marker_of(cfg, key)
+    for issue in existing:
+        names = {l["name"] for l in issue["labels"]["nodes"]}
+        if label in names:
+            return issue
+    body_marker = f"<!-- {cfg['markerPrefix']}-key: {key} -->"
+    for issue in existing:
+        if body_marker in (issue.get("description") or ""):
+            return issue
+    return None
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Publish a spec-kit plan to Linear.")
+    ap.add_argument("plan", help="path to build-plan.yaml / acceptance-plan.yaml")
+    ap.add_argument("--config", default=None, help="publisher.yaml (default: .spec-kit/publisher.yaml)")
+    ap.add_argument("--dry-run", action="store_true", help="preview only, never write")
+    ap.add_argument("--update", action="store_true",
+                    help="overwrite managed fields on already-stamped issues (default: skip)")
+    ap.add_argument("--yes", action="store_true", help="perform the writes (otherwise preview only)")
+    ap.add_argument("--report", default=None, help="write a JSON report to this path")
+    args = ap.parse_args()
+
+    plan_path = Path(args.plan)
+    plan = load_plan(plan_path)
+    kind = plan_kind(plan)
+    cfg_path = Path(args.config) if args.config else Path(".spec-kit/publisher.yaml")
+    cfg = load_config(cfg_path)
+    linear_cfg = cfg["linear"]
+    tickets = topo_order(plan["tickets"])
+    milestone = plan["milestone"]
+
+    api_key = os.environ.get("LINEAR_API_KEY")
+    offline = not api_key
+    if offline and not args.dry_run:
+        usage_error("LINEAR_API_KEY is not set (offline preview available via --dry-run)")
+
+    # ---- resolve tracker state (batched reads) ------------------------------
+    existing: list[dict] = []
+    container = None
+    api = None
+    if not offline:
+        api = Linear(api_key)
+        team = api.team(linear_cfg["team"])
+        existing = api.stamped_issues(team["id"], cfg["markerPrefix"])
+        # container: project stamped with the milestone key (name match as fallback)
+        ms_marker = f"<!-- {cfg['markerPrefix']}-key: {milestone['key']} -->"
+        projects = api.projects(team["id"])
+        container = next((p for p in projects if ms_marker in (p.get("description") or "")), None) \
+            or next((p for p in projects if p["name"] == (linear_cfg.get("project") or milestone["name"])), None)
+
+    # ---- build the create/update/skip set -----------------------------------
+    actions = []  # (ticket, action, existing_issue|None)
+    for t in tickets:
+        found = find_stamped(existing, cfg, t["key"]) if not offline else None
+        if offline:
+            actions.append((t, "create?", None))
+        elif found and args.update:
+            actions.append((t, "update", found))
+        elif found:
+            actions.append((t, "skip", found))
+        else:
+            actions.append((t, "create", None))
+
+    n = {a: sum(1 for _, act, _ in actions if act == a) for a in ("create", "update", "skip", "create?")}
+    print(f"plan: {plan_path} ({kind} plan, {len(tickets)} tickets)")
+    print(f"container: {'existing' if container else 'CREATE'} "
+          f"{'project' if linear_cfg['milestoneAs'] == 'project' else 'milestone'} "
+          f"for milestone {milestone['key']!r}"
+          + (" [offline: not checked]" if offline else ""))
+    for t, act, found in actions:
+        suffix = f" -> {found['identifier']}" if found else ""
+        print(f"  {act:8} {t['key']}  ({t.get('tier') or t.get('layer', '')}){suffix}")
+    print("summary: " + ", ".join(f"{v} {k}" for k, v in n.items() if v))
+
+    if args.dry_run or not args.yes:
+        if not args.dry_run:
+            print("\npreview only -- re-run with --yes to publish", file=sys.stderr)
+        return
+
+    # ---- writes --------------------------------------------------------------
+    team_id = team["id"]
+    ms_desc = (milestone.get("description") or "") + \
+        f"\n\n<!-- {cfg['markerPrefix']}-key: {milestone['key']} -->"
+    if container is None:
+        container = api.create_project(team_id, linear_cfg.get("project") or milestone["name"], ms_desc)
+        print(f"created project: {container['name']}")
+    project_id = container["id"]
+
+    milestone_id = None
+    if linear_cfg["milestoneAs"] == "milestone":
+        ms_marker = f"<!-- {cfg['markerPrefix']}-key: {milestone['key']} -->"
+        found_ms = next((m for m in api.project_milestones(project_id)
+                         if ms_marker in (m.get("description") or "") or m["name"] == milestone["name"]), None)
+        milestone_id = (found_ms or api.create_project_milestone(project_id, milestone["name"], ms_desc))["id"]
+
+    # labels: one fetch, create only the missing ones
+    label_ids = api.labels(team_id)
+    needed = {name for t in tickets for name in ticket_labels(t, cfg)}
+    for name in sorted(needed - set(label_ids)):
+        label_ids[name] = api.create_label(team_id, name)
+
+    assignee_id = None
+    if linear_cfg.get("defaultAssignee"):
+        assignee_id = api.user_id(linear_cfg["defaultAssignee"])
+
+    managed_prefixes = (f"{cfg['markerPrefix']}:", "tier:", "pr:")
+    ids: dict[str, str] = {}  # ticket key -> issue id
+    report = []
+    for t, act, found in actions:
+        body = render_body(t, kind, cfg["markerPrefix"])
+        desired_labels = [label_ids[n] for n in ticket_labels(t, cfg)]
+        base = {
+            "title": t["title"],
+            "description": body,
+            "labelIds": desired_labels,
+        }
+        if t.get("priority") in cfg["priorityMap"]:
+            base["priority"] = cfg["priorityMap"][t["priority"]]
+        if t.get("estimate") is not None:
+            base["estimate"] = t["estimate"]
+
+        if act == "create":
+            inp = {**base, "teamId": team_id, "projectId": project_id}
+            if milestone_id:
+                inp["projectMilestoneId"] = milestone_id
+            if t.get("parent") and t["parent"] in ids:
+                inp["parentId"] = ids[t["parent"]]
+            if assignee_id:
+                inp["assigneeId"] = assignee_id
+            issue = api.create_issue(inp)
+            ids[t["key"]] = issue["id"]
+            report.append({"key": t["key"], "action": "created",
+                           "identifier": issue["identifier"], "url": issue["url"]})
+            print(f"created {issue['identifier']}  {t['key']}")
+        elif act == "update":
+            # preserve human-added labels: keep anything outside managed namespaces
+            kept = [l["id"] for l in found["labels"]["nodes"]
+                    if not l["name"].startswith(managed_prefixes)
+                    and l["id"] not in desired_labels
+                    and l["name"] not in needed]
+            inp = dict(base, labelIds=sorted(set(desired_labels + kept)), projectId=project_id)
+            if t.get("parent") and t["parent"] in ids:
+                inp["parentId"] = ids[t["parent"]]
+            api.update_issue(found["id"], inp)
+            ids[t["key"]] = found["id"]
+            report.append({"key": t["key"], "action": "updated",
+                           "identifier": found["identifier"], "url": found["url"]})
+            print(f"updated {found['identifier']}  {t['key']}")
+        else:  # skip
+            ids[t["key"]] = found["id"]
+            report.append({"key": t["key"], "action": "skipped",
+                           "identifier": found["identifier"], "url": found["url"]})
+
+    # relations: blockedBy -> blocker blocks blocked; skip ones already present
+    existing_rel: set[tuple[str, str]] = set()
+    for issue in existing:
+        for r in issue["relations"]["nodes"]:
+            if r["type"] == "blocks" and r.get("relatedIssue"):
+                existing_rel.add((issue["id"], r["relatedIssue"]["id"]))
+    wired = 0
+    for t in tickets:
+        for b in t.get("blockedBy") or []:
+            pair = (ids[b], ids[t["key"]])
+            if pair not in existing_rel:
+                api.create_relation(*pair)
+                wired += 1
+
+    counts = {a: sum(1 for r in report if r["action"] == a) for a in ("created", "updated", "skipped")}
+    print(f"done: {counts['created']} created, {counts['updated']} updated, "
+          f"{counts['skipped']} skipped, {wired} relations wired")
+    print(f"project: {container.get('url', container['name'])}")
+    if args.report:
+        Path(args.report).write_text(json.dumps(
+            {"plan": str(plan_path), "kind": kind, "project": container.get("url"),
+             "issues": report}, indent=2))
+        print(f"report: {args.report}")
+
+
+if __name__ == "__main__":
+    main()

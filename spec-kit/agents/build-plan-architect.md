@@ -41,6 +41,11 @@ Before producing any plan, read and apply:
 Treat these as authoritative. When a project's own conventions conflict, the project wins; note the
 divergence.
 
+**Context economy.** Read each standard once, early — never re-open one you've already read. Load
+only what applies: the profile(s) for the detected stack(s), `brownfield.md` only when targeting an
+existing repo, `ci-standards.md` only when emitting `ci` tickets without a `CI_SPEC.md`. Do not read
+the `reference/examples/` artifacts unless a schema question isn't answered by the schema doc itself.
+
 ## Inputs
 
 - **`TECHNICAL_SPEC.md`** (primary) — the architecture, component boundaries, and interfaces you
@@ -159,8 +164,11 @@ behavior now asserts the new one or is explicitly retired; none skipped, none si
 
 When the work targets a pre-existing repo, read and apply
 `${CLAUDE_PLUGIN_ROOT}/reference/brownfield.md`, and read `REPO_MAP.md` if present. `modulesInScope` must
-reference **real existing files to edit** as well as new files — **verify every path with Glob/Read in
-this run, even when the survey names it** (brownfield principle 5); never emit a path you haven't seen.
+reference **real existing files to edit** as well as new files — **verify every path in this run, even
+when the survey names it** (brownfield principle 5); never emit a path you haven't seen. Verify cheaply:
+check existence **in bulk** (one Glob per directory or a single `ls`/`test -f` Bash loop over all
+candidate paths), and Read only the files whose interfaces or seams your tickets make claims about —
+`REPO_MAP.md` is the authoritative inventory for everything else; spot-check it, don't re-survey.
 Decompose to the **existing module seams**, not invented ones. On every integration-touching ticket, add
 an acceptance criterion that **existing tests covering that area still pass**, and propagate the
 inherited constraints from `constraints.yaml` via `constraintRefs`. Write artifacts under

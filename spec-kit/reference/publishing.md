@@ -4,8 +4,10 @@
 > published to a tracker by a **publisher skill** (`publish-linear`, `publish-jira`, …). This document
 > is the **shared contract** every publisher obeys: plan-kind detection, body rendering, idempotency
 > via key stamping, the neutral→tracker degradation principle, and config. A publisher's own `SKILL.md`
-> adds only the tracker-specific mapping and the MCP calls — everything portable lives here, so the
-> publishers stay identical except where the trackers genuinely differ.
+> adds only the tracker-specific mapping and the write mechanism — preferably a bundled `bin/` script
+> driving the tracker's API directly (deterministic, batched, near-zero tokens), with agent-driven MCP
+> calls as the fallback — everything portable lives here, so the publishers stay identical except where
+> the trackers genuinely differ.
 
 ## What a publisher does (and does not)
 
