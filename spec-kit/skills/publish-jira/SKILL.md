@@ -43,13 +43,12 @@ Follow `publishing.md` Steps 0–5. The Jira bindings for each step:
 4. **Preview & confirm** (Step 3) — summarize create/update/skip; get explicit confirmation; honor
    `--dry-run`.
 5. **Create/update issues** (Step 4), in dependency order:
-   - **Search** via JQL on the body marker `text ~ "<markerPrefix>-key: <key>"` (and/or the
-     `<markerPrefix>-<key>` label).
+   - **Search** via JQL on the body marker `text ~ "<markerPrefix>-key: <key>"` (legacy
+     `<markerPrefix>-<key>` labels also count as a match but are never created).
    - **Skip / `--update` / create** per the idempotency rule; create with `createJiraIssue` (issuetype
      from `issueTypeMap`, default Story), setting the epic parent.
    - **Render the description** per `publishing.md` *Body rendering* for this plan kind, ending with the
-     hidden marker line.
-   - **Stamp** the `<markerPrefix>-<key>` label on create.
+     hidden marker line — the body marker is the sole identity stamp.
 6. **Wire relationships** (Step 5) once issues exist: `parent` → a sub-task or the issue's parent field
    per `parentAs`; each `blockedBy` → an "is blocked by" link via `createIssueLink` (resolve the link
    type with `getIssueLinkTypes`).
@@ -70,11 +69,11 @@ Follow `publishing.md` Steps 0–5. The Jira bindings for each step:
 | `estimate` | story-points field (from project metadata; dropped if unconfigured) |
 | `parent` | sub-task, or the parent field, per `parentAs` |
 | `blockedBy` | "is blocked by" issue link |
-| `key` | **idempotency marker**: label `<markerPrefix>-<key>` + body comment `<!-- <markerPrefix>-key: <key> -->` |
+| `key` | **idempotency marker**: hidden body comment `<!-- <markerPrefix>-key: <key> -->` (sole identity; legacy `<markerPrefix>-<key>` labels are matched but never created) |
 
-Jira labels disallow spaces, so the markers/labels use hyphens (`<markerPrefix>-<key>`) rather than the
-colon form Linear uses; the hidden body marker is identical across trackers and is the authoritative
-fallback found via JQL `text ~`.
+Jira labels disallow spaces, so labels use hyphens (`tier-simple`) rather than the colon form Linear
+uses; the hidden body marker is identical across trackers and is the authoritative identity, found via
+JQL `text ~`.
 
 Routing values (project, issue types, priority scale, story-points field, assignee) come from config,
 never the plan.

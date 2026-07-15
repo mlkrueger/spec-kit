@@ -62,7 +62,7 @@ the team has estimates disabled.
 | `estimate` | issue estimate (dropped if the team has estimates disabled) |
 | `parent` | parent issue (sub-issue) |
 | `blockedBy` | "blocked by" issue relation |
-| `key` | **idempotency marker**: label `<markerPrefix>:<key>` + body comment `<!-- <markerPrefix>-key: <key> -->` |
+| `key` | **idempotency marker**: hidden body comment `<!-- <markerPrefix>-key: <key> -->` (sole identity; legacy `<markerPrefix>:<key>` labels are matched but never created) |
 
 Routing values (team, project, priority scale, label prefix, assignee) come from config, never the
 plan.
@@ -73,7 +73,7 @@ plan.
 
 ```yaml
 tracker: linear
-markerPrefix: "skp"           # idempotency label/marker prefix — keep stable forever
+markerPrefix: "skp"           # idempotency body-marker prefix — keep stable forever
 labelPrefix: ""               # optional prefix applied to neutral labels
 priorityMap:                  # neutral -> Linear's scale: 0 none, 1 urgent, 2 high, 3 normal, 4 low
   urgent: 1
@@ -91,13 +91,20 @@ linear:
 > values above are a sensible default; adjust to match how your team actually uses priority.
 
 If the file is absent, create it with the user (team + project at minimum), then proceed. This one-time
-setup is how a team pins Linear specifics without polluting the portable plan.
+setup is how a team pins Linear specifics without polluting the portable plan. To discover the values
+(and smoke-test the API key), use the script itself — no MCP needed:
+
+```sh
+${CLAUDE_PLUGIN_ROOT}/bin/publish-linear --list-teams
+${CLAUDE_PLUGIN_ROOT}/bin/publish-linear --list-projects --team ENG
+```
 
 ## Fallback: Linear MCP (no API key available)
 
 When the user cannot mint an API key but has the Linear MCP connected, execute `publishing.md` Steps
 0–5 manually via the MCP tools (load them first with `ToolSearch`, e.g.
 `select:mcp__plugin_linear_linear__list_teams,mcp__plugin_linear_linear__list_projects,mcp__plugin_linear_linear__save_project,mcp__plugin_linear_linear__list_issues,mcp__plugin_linear_linear__save_issue,mcp__plugin_linear_linear__list_issue_labels,mcp__plugin_linear_linear__create_issue_label`):
-search by the `<markerPrefix>:<key>` label (body marker as fallback), skip/update/create per the
-idempotency rule, render bodies per `publishing.md`, stamp on create, then wire `parent`/`blockedBy`
-relations. This path is slow and token-heavy for large plans — prefer the script whenever possible.
+search by the hidden body marker (`<markerPrefix>-key:` in the description; legacy `<markerPrefix>:<key>`
+labels also count as a match but are never created), skip/update/create per the idempotency rule, render
+bodies per `publishing.md`, stamp the body marker on create, then wire `parent`/`blockedBy` relations.
+This path is slow and token-heavy for large plans — prefer the script whenever possible.

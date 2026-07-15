@@ -104,11 +104,17 @@ unsupported). Everything not mapped here stays out of the tracker.
 Re-publishing must **update, not duplicate**. The durable identity lives on the created issue (in the
 tracker), never in a local file — so re-runs from any machine/person converge. A publisher MUST:
 
-1. **On create**, stamp the ticket's `key` in two machine-findable places: a namespaced label
-   `<markerPrefix>:<key>` and a hidden body marker `<!-- <markerPrefix>-key: <key> -->`.
-2. **Before create**, search for that marker. If found: **skip** (default — never clobber manual edits)
-   or, with `--update`, overwrite only the managed body sections and managed labels/relations, leaving
-   human-added comments/labels/state alone.
+1. **On create**, stamp the ticket's `key` as a hidden body marker: `<!-- <markerPrefix>-key: <key> -->`
+   (always the last line of the body). The body marker is the **sole identity**; do **not** also create
+   a per-ticket marker label — one label per ticket pollutes the tracker's label namespace with
+   identities nobody filters by. *(Legacy: publishers before spec-kit 0.6.0 also stamped a
+   `<markerPrefix>:<key>` label; searches should still **match** those labels so old issues are found,
+   but never mint new ones.)*
+2. **Before create**, search for the marker — one bulk query on the body marker (e.g. description
+   contains `<markerPrefix>-key:`), plus the legacy label match, archived issues included. If found:
+   **skip** (default — never clobber manual edits; never touch archived issues), or with `--update`
+   overwrite only the managed body sections and managed labels/relations, leaving human-added
+   comments/labels/state alone.
 3. Stamp `milestone.key` the same way so the container is matched on re-run, not recreated.
 
 `markerPrefix` defaults to `skp` (spec-kit plan); it is configurable per team but must stay **stable**
@@ -121,7 +127,7 @@ tracker-specific keys live in each publisher's `SKILL.md`; the shared shape is:
 
 ```yaml
 tracker: linear            # or: jira
-markerPrefix: "skp"        # idempotency label/marker prefix — keep stable forever
+markerPrefix: "skp"        # idempotency body-marker prefix — keep stable forever
 labelPrefix: ""            # optional prefix applied to neutral labels
 priorityMap:               # neutral priority -> the tracker's scale (see the publisher's SKILL.md)
   urgent: ...

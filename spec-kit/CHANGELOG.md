@@ -10,6 +10,38 @@ release body for that version's tag.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-15
+
+### Changed
+- **Idempotency identity is the hidden body marker; per-ticket marker labels are gone.** Publishers
+  previously stamped every issue with a `<markerPrefix>:<key>` label — one label per ticket, flooding
+  the team's label namespace with identities nobody filters by. The hidden body comment
+  (`<!-- <markerPrefix>-key: <key> -->`) is now the sole identity: `publish-linear` searches it with
+  one bulk description-contains query, still *matches* legacy marker labels (pre-0.6.0 issues are
+  found, and `--update` sheds their marker labels), but never creates new ones. The queryable labels
+  (`tier:*`, `pr:*`, layer/stack) are unchanged. Contract updated in `publishing.md`; the Jira skill
+  follows the same rule.
+
+### Added
+- **`publish-linear --list-teams` / `--list-projects [--team X]`** — discovery for the config
+  walkthrough (team key, project names) and an API-key smoke test, so first-run setup needs no MCP.
+
+### Fixed
+- **`publish-linear`: workspace-level label collisions.** `issueLabelCreate` fails with "duplicate
+  label name" when the name already exists as a workspace-level label (e.g. Linear's built-in
+  `Feature`), which the team-scoped label fetch can't see. On that error the script now looks the
+  label up workspace-wide and reuses it instead of failing mid-publish. Field-hit on the first real
+  run (overheard).
+- **Archived issues are matched on re-publish** (`includeArchived` in the stamped-issue search), so a
+  published-then-archived ticket is reported as skipped instead of silently recreated; archived
+  matches are never updated.
+- **`--update` no longer strips a human-added label** that happens to share a name with *another*
+  ticket's managed label (preservation now checks the current ticket's label set, not the plan-wide
+  set).
+- **Silent drops now warn on stderr**: a `defaultAssignee` that resolves to no Linear user, a
+  `priority` value missing from `priorityMap`, and an ambiguous team match (multiple teams matching
+  the configured name).
+
 ## [0.5.0] — 2026-07-15
 
 ### Added

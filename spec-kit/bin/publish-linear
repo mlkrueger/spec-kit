@@ -124,7 +124,8 @@ def render_body(ticket: dict, kind: str, marker_prefix: str) -> str:
 
 def ticket_labels(ticket: dict, cfg: dict) -> list[str]:
     """Managed label set per the contract: layer/stack/labels (prefixed),
-    tier:<v> and pr:<PR-id> verbatim, plus the idempotency marker."""
+    tier:<v> and pr:<PR-id> verbatim. Identity lives in the hidden body
+    marker, NOT a label -- per-ticket marker labels polluted the namespace."""
     prefix = cfg.get("labelPrefix") or ""
     names: list[str] = []
     for v in [ticket.get("layer"), ticket.get("stack"), *(ticket.get("labels") or [])]:
@@ -134,7 +135,6 @@ def ticket_labels(ticket: dict, cfg: dict) -> list[str]:
         names.append(f"tier:{ticket['tier']}")
     for pr in ticket.get("tracesTo") or []:
         names.append(f"pr:{pr}")
-    names.append(f"{cfg['markerPrefix']}:{ticket['key']}")
     # dedupe, keep order
     seen: set[str] = set()
     return [n for n in names if not (n in seen or seen.add(n))]
@@ -235,6 +235,9 @@ class Linear:
         nodes = data["teams"]["nodes"]
         if not nodes:
             publish_error(f"Linear team {key_or_name!r} not found")
+        if len(nodes) > 1:
+            print(f"warning: {len(nodes)} teams match {key_or_name!r}; using "
+                  f"{nodes[0]['key']} ({nodes[0]['name']})", file=sys.stderr)
         return nodes[0]
 
     def projects(self, team_id: str) -> list[dict]:
@@ -262,19 +265,44 @@ class Linear:
         )
         return {n["name"]: n["id"] for n in nodes}
 
-    def stamped_issues(self, team_id: str, marker_prefix: str) -> list[dict]:
-        """All issues in the team carrying a marker label -- one paginated query."""
-        return self.paginate(
-            """query($id: ID!, $prefix: String!, $after: String) {
-                 issues(first: 100, after: $after, filter: {
-                   team: { id: { eq: $id } },
-                   labels: { name: { startsWith: $prefix } } })
-                 { nodes { id identifier url title description
+    ISSUE_NODE = """nodes { id identifier url title description archivedAt
                            labels(first: 50) { nodes { id name } }
                            parent { id }
                            relations(first: 50) { nodes { type relatedIssue { id } } } }
-                   pageInfo { hasNextPage endCursor } } }""",
+                   pageInfo { hasNextPage endCursor }"""
+
+    def stamped_issues(self, team_id: str, marker_prefix: str) -> list[dict]:
+        """All issues ever stamped by this publisher, archived included.
+
+        Primary identity is the hidden body marker (one description-contains
+        query). A second query on the legacy `<prefix>:<key>` marker labels
+        catches pre-0.6.0 issues whose descriptions were edited; new issues
+        no longer get marker labels.
+        """
+        by_body = self.paginate(
+            """query($id: ID!, $marker: String!, $after: String) {
+                 issues(first: 100, after: $after, includeArchived: true, filter: {
+                   team: { id: { eq: $id } },
+                   description: { contains: $marker } })
+                 { %s } }""" % self.ISSUE_NODE,
+            {"id": team_id, "marker": f"{marker_prefix}-key:"}, "issues",
+        )
+        by_label = self.paginate(
+            """query($id: ID!, $prefix: String!, $after: String) {
+                 issues(first: 100, after: $after, includeArchived: true, filter: {
+                   team: { id: { eq: $id } },
+                   labels: { name: { startsWith: $prefix } } })
+                 { %s } }""" % self.ISSUE_NODE,
             {"id": team_id, "prefix": f"{marker_prefix}:"}, "issues",
+        )
+        seen: set[str] = set()
+        return [i for i in by_body + by_label if not (i["id"] in seen or seen.add(i["id"]))]
+
+    def teams(self) -> list[dict]:
+        return self.paginate(
+            """query($after: String) { teams(first: 100, after: $after)
+                 { nodes { id key name } pageInfo { hasNextPage endCursor } } }""",
+            {}, "teams",
         )
 
     def user_id(self, email_or_id: str) -> str | None:
@@ -290,12 +318,31 @@ class Linear:
     # -- writes ---------------------------------------------------------------
 
     def create_label(self, team_id: str, name: str) -> str:
-        data = self.gql(
-            """mutation($input: IssueLabelCreateInput!) {
-                 issueLabelCreate(input: $input) { issueLabel { id } } }""",
-            {"input": {"teamId": team_id, "name": name}},
-        )
-        return data["issueLabelCreate"]["issueLabel"]["id"]
+        try:
+            data = self.gql(
+                """mutation($input: IssueLabelCreateInput!) {
+                     issueLabelCreate(input: $input) { issueLabel { id } } }""",
+                {"input": {"teamId": team_id, "name": name}},
+            )
+            return data["issueLabelCreate"]["issueLabel"]["id"]
+        except RuntimeError as e:
+            # Reuse an already-existing label instead of failing. team.labels
+            # (see labels()) misses workspace-level labels, so a name that
+            # collides with a workspace default (e.g. Linear's built-in
+            # "Feature") reaches here as a "duplicate label name" error.
+            msg = str(e).lower()
+            if "duplicate label name" not in msg and "already exists" not in msg:
+                raise
+            found = self.gql(
+                """query($n: String!) {
+                     issueLabels(filter: { name: { eqIgnoreCase: $n } })
+                     { nodes { id name } } }""",
+                {"n": name},
+            )["issueLabels"]["nodes"]
+            if not found:
+                raise
+            exact = next((n for n in found if n["name"] == name), None)
+            return (exact or found[0])["id"]
 
     def create_project(self, team_id: str, name: str, description: str) -> dict:
         data = self.gql(
@@ -377,15 +424,44 @@ def find_stamped(existing: list[dict], cfg: dict, key: str) -> dict | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Publish a spec-kit plan to Linear.")
-    ap.add_argument("plan", help="path to build-plan.yaml / acceptance-plan.yaml")
+    ap.add_argument("plan", nargs="?", help="path to build-plan.yaml / acceptance-plan.yaml")
     ap.add_argument("--config", default=None, help="publisher.yaml (default: .spec-kit/publisher.yaml)")
     ap.add_argument("--dry-run", action="store_true", help="preview only, never write")
     ap.add_argument("--update", action="store_true",
                     help="overwrite managed fields on already-stamped issues (default: skip)")
     ap.add_argument("--yes", action="store_true", help="perform the writes (otherwise preview only)")
     ap.add_argument("--report", default=None, help="write a JSON report to this path")
+    ap.add_argument("--list-teams", action="store_true",
+                    help="list Linear teams (for config setup; also an auth check) and exit")
+    ap.add_argument("--list-projects", action="store_true",
+                    help="list projects for --team / the configured team, and exit")
+    ap.add_argument("--team", default=None, help="team key/name for --list-projects")
     args = ap.parse_args()
 
+    if args.list_teams or args.list_projects:
+        api_key = os.environ.get("LINEAR_API_KEY")
+        if not api_key:
+            usage_error("LINEAR_API_KEY is not set")
+        api = Linear(api_key)
+        if args.list_teams:
+            for t in api.teams():
+                print(f"{t['key']:8} {t['name']}")
+        if args.list_projects:
+            team_ref = args.team
+            if not team_ref:
+                cfg_path = Path(args.config) if args.config else Path(".spec-kit/publisher.yaml")
+                if cfg_path.exists():
+                    team_ref = ((yaml.safe_load(cfg_path.read_text()) or {})
+                                .get("linear") or {}).get("team")
+            if not team_ref:
+                usage_error("--list-projects needs --team or a config with linear.team")
+            team = api.team(team_ref)
+            for p in api.projects(team["id"]):
+                print(p["name"])
+        return
+
+    if not args.plan:
+        usage_error("plan path is required (or use --list-teams / --list-projects)")
     plan_path = Path(args.plan)
     plan = load_plan(plan_path)
     kind = plan_kind(plan)
@@ -420,12 +496,20 @@ def main() -> None:
         found = find_stamped(existing, cfg, t["key"]) if not offline else None
         if offline:
             actions.append((t, "create?", None))
+        elif found and found.get("archivedAt"):
+            # never touch archived issues; matching them prevents duplicates
+            actions.append((t, "skip", found))
         elif found and args.update:
             actions.append((t, "update", found))
         elif found:
             actions.append((t, "skip", found))
         else:
             actions.append((t, "create", None))
+
+    unmapped = {t["priority"] for t, _, _ in actions
+                if t.get("priority") and t["priority"] not in cfg["priorityMap"]}
+    for p in sorted(unmapped):
+        print(f"warning: priority {p!r} has no priorityMap entry -- dropped", file=sys.stderr)
 
     n = {a: sum(1 for _, act, _ in actions if act == a) for a in ("create", "update", "skip", "create?")}
     print(f"plan: {plan_path} ({kind} plan, {len(tickets)} tickets)")
@@ -435,6 +519,8 @@ def main() -> None:
           + (" [offline: not checked]" if offline else ""))
     for t, act, found in actions:
         suffix = f" -> {found['identifier']}" if found else ""
+        if found and found.get("archivedAt"):
+            suffix += " [archived]"
         print(f"  {act:8} {t['key']}  ({t.get('tier') or t.get('layer', '')}){suffix}")
     print("summary: " + ", ".join(f"{v} {k}" for k, v in n.items() if v))
 
@@ -468,6 +554,9 @@ def main() -> None:
     assignee_id = None
     if linear_cfg.get("defaultAssignee"):
         assignee_id = api.user_id(linear_cfg["defaultAssignee"])
+        if assignee_id is None:
+            print(f"warning: defaultAssignee {linear_cfg['defaultAssignee']!r} did not "
+                  "resolve to a Linear user -- issues will be unassigned", file=sys.stderr)
 
     managed_prefixes = (f"{cfg['markerPrefix']}:", "tier:", "pr:")
     ids: dict[str, str] = {}  # ticket key -> issue id
@@ -499,11 +588,16 @@ def main() -> None:
                            "identifier": issue["identifier"], "url": issue["url"]})
             print(f"created {issue['identifier']}  {t['key']}")
         elif act == "update":
-            # preserve human-added labels: keep anything outside managed namespaces
+            # preserve human-added labels: keep anything outside managed
+            # namespaces and not one of THIS ticket's managed names (checking
+            # the plan-wide set would strip a human label that merely shares
+            # a name with another ticket's label). Legacy skp:* marker labels
+            # fall in managed_prefixes and are shed here -- the body marker
+            # carries identity now.
+            desired_names = set(ticket_labels(t, cfg))
             kept = [l["id"] for l in found["labels"]["nodes"]
                     if not l["name"].startswith(managed_prefixes)
-                    and l["id"] not in desired_labels
-                    and l["name"] not in needed]
+                    and l["name"] not in desired_names]
             inp = dict(base, labelIds=sorted(set(desired_labels + kept)), projectId=project_id)
             if t.get("parent") and t["parent"] in ids:
                 inp["parentId"] = ids[t["parent"]]
